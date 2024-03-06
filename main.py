@@ -3,19 +3,17 @@ import sys
 
 # Do this to suppress warnings when loading scapy module
 import scapy.packet
+
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 
-from scapy.all import (
-    get_if_addr,
-    get_if_list,
-    get_if_hwaddr,
-    sniff
-)
+from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff
+import plotly.graph_objects as go
 import pandas as pd
 from scapy.all import rdpcap
 from enum import Enum
 from typing import Union
 from itertools import pairwise
+from tqdm import tqdm
 
 MacAddress = str
 IPv4Address = str
@@ -70,7 +68,7 @@ def check_frame_scope(frame: scapy.packet.Packet) -> Enum:
 
 
 def check_frame_direction(
-        frame: scapy.packet.Packet, my_mac_addresses: MacAddressInterfaceDict
+    frame: scapy.packet.Packet, my_mac_addresses: MacAddressInterfaceDict
 ) -> Enum:
     if frame.src in my_mac_addresses:
         return Direction.TRANSMIT
@@ -165,63 +163,83 @@ def list_ip_addresses() -> list:
 #     return nodes_dict, links_dict
 #
 
+
 def try_sankey(df, metric=None):
-    paths = ["destination_mac", "source_mac"]
 
-    res = list(pairwise(paths))
-    input("It's sankey time")
-    # Map each unique value of interesting fields to an index
-    columns_to_assign_indexes_for = [
-        "source_mac",
-        "destination_mac",
-        "type",
-        "l3_source",
-    ]
+    # I'd really like to be able to trace a flow from beginning to end
+    #  ex: https://public.tableau.com/app/profile/actinvision/viz/SuperstoreSankeyShowcaseLOD/Sankey
 
-    all_nodes = pd.concat(
-        [df[column_name] for column_name in columns_to_assign_indexes_for]
-    ).unique()
+    # data for which fields to use for the "path" when showing receive/transmit
+    dir_path = {
+        "receive": [
+            "l4_source",
+            "l3_type",
+            "l3_source",
+            "type",
+            "source_mac",
+            "destination_mac",
+        ],
+        "transmit": [
+            "source_mac",
+            "destination_mac",
+            "type",
+            "l3_destination",
+            "l3_type",
+            "l4_destination",
+        ],
+    }
+    # The idea here is to do a groupby for each pair of columns from the "path" in order to create the
+    # count for them (eg frames or bytes)
+    for direction, path in dir_path.items():
+        # Create the pairs from the list
+        # eg [ A, B, C, D] -> (A,B ), (B,C), (C,D)
+        path_pairs = list(pairwise(path))
+        # print(f"{direction}, {path_pairs=}")
+        # Map each unique value of interesting fields to an index number to give to sankey
+        all_nodes = pd.concat([df[column_name] for column_name in path]).unique()
+        node_indices = {node: index for index, node in enumerate(all_nodes)}
 
-    node_indices = {node: index for index, node in enumerate(all_nodes)}
+        # print(f"{node_indices=}")
+        combined_df = pd.DataFrame()
 
-    print(f"{node_indices=}")
+        for source, target in path_pairs:
+            # print(f"{source=}, {target=}, {metric=}")
 
-    value_selector = "frames"  # try "length"
+            agg_data = (
+                df.query(f'direction == "{direction}"')
+                .groupby(
+                    [
+                        source,
+                        target,
+                    ],
+                    dropna=False,
+                )[metric]
+                .sum()
+                .reset_index()
+            )
 
-    pairs = [
-        ("source_mac", "destination_mac", value_selector),
-        # ("type", "source_mac", value_selector),
-        # ("l3_source", "type", value_selector),
-    ]
+            # Apply mapping to the aggregated data
+            # Avoid trying to look up cells that are None/NaN
+            agg_data["SourceID"] = agg_data[source].apply(
+                lambda x: node_indices[x] if (pd.notnull(x)) else x
+            )
+            agg_data["TargetID"] = agg_data[target].apply(
+                lambda x: node_indices[x] if (pd.notnull(x)) else x
+            )
+            agg_data["Value"] = agg_data[metric].apply(lambda x: x)
 
-    for source, target, value in pairs:
-        print(f"{source=}, {target=}, {value=}")
-        agg_data = (
-            df.query('direction == "receive"')
-            .groupby(
-                [
-                    # "direction",
-                    source,
-                    target,
-                    "type",
-                    # "scope",
-                    # l3_source,
-                    # "l3_destination",
-                ],
-                dropna=False,
-            )[value]
-            .sum()
-            .reset_index()
-        )
-
-        # Apply mapping to the aggregated data
-        agg_data["SourceID"] = agg_data[source].apply(lambda x: node_indices[x])
-        agg_data["TargetID"] = agg_data[target].apply(lambda x: node_indices[x])
-        agg_data["Value"] = agg_data[value].apply(lambda x: x)
-
-        print(agg_data)
+            # print(agg_data)
+            # Accumulate the dataframe
+            combined_df = pd.concat([combined_df, agg_data])
 
         # Creating the Sankey diagram
+        # Hardcoding alignment based on receive/transmit to make nodes with no outflow (eg ARP) position
+        # properly.   There is probably a better way to do this
+        if direction == "receive":
+            alignment = "right"
+        else:
+            alignment = "left"
+
         fig = go.Figure(
             data=[
                 go.Sankey(
@@ -230,19 +248,25 @@ def try_sankey(df, metric=None):
                         thickness=20,
                         line=dict(color="black", width=0.5),
                         label=list(all_nodes),
+                        align=alignment
                     ),
                     link=dict(
-                        source=agg_data["SourceID"],  # indices of source nodes
-                        target=agg_data["TargetID"],  # indices of target nodes
-                        value=agg_data["Value"],  # values for each flow
+                        # indices of source nodes
+                        source=combined_df["SourceID"],
+                        # indices of source nodes
+                        target=combined_df["TargetID"],
+                        # values for each flow
+                        value=combined_df["Value"],
                     ),
                 )
             ]
         )
 
-        fig.update_layout(title_text="Layer 2 Traffic Received", font_size=10)
+        fig.update_layout(title_text=f"Network {metric} {direction}", font_size=10)
         fig.show()
-        input("Carry on")
+
+        input(f"That was {direction}")
+
 
 
 def try_sunburst(df, metric=None):
@@ -252,10 +276,7 @@ def try_sunburst(df, metric=None):
     for source, target in res:
         receive_data = (
             df.groupby(
-                [
-                    source,
-                    target
-                ],
+                [source, target],
                 dropna=False,
             )[metric]
             .sum()
@@ -367,6 +388,7 @@ def construct_dataframe_from_capture(packets: scapy.all.PacketList) -> pd.DataFr
             # print(f"IP {l3_type=}")
             try:
                 l3_type = packet["IP"].get_field("proto").i2s[l3_type]
+                l3_type = l3_type.upper()
                 # print(f"{l3_type=}")
             except AttributeError:
                 pass
@@ -377,6 +399,8 @@ def construct_dataframe_from_capture(packets: scapy.all.PacketList) -> pd.DataFr
             # print(f"IPv6 {l3_type=}")
             try:
                 l3_type = packet["IPv6"].get_field("nh").i2s[l3_type]
+                l3_type = l3_type.upper()
+
                 # print(f"{l3_type=}")
             except AttributeError:
                 pass
@@ -411,11 +435,17 @@ def construct_dataframe_from_capture(packets: scapy.all.PacketList) -> pd.DataFr
     df = pd.DataFrame(data)
     # df.fillna(value=np.nan, inplace=True)
 
-    print(df)
+    # print(df)
     return df
 
 
 def main():
+    def custom_action(packet):
+        # This is the callback function executed for each packet captured
+        # Update the tqdm progress bar by 1 for each packet
+        pbar.update(1)
+        # You can add more packet processing logic here
+
     # List all IP addresses
     ip_addresses = list_ip_addresses()
     for interface, ip in ip_addresses:
@@ -428,21 +458,26 @@ def main():
         my_mac_addresses[mac] = interface
 
     # Load packet capture or sniff traffic
-    # packet_capture_file = None
-    packet_capture_file = "blop.pcapng"
+    packet_capture_file = None
+    # packet_capture_file = "blop.pcapng"
 
     if packet_capture_file:
         packets = rdpcap(packet_capture_file)
     else:
-        packets = sniff(
-            iface="en0",
-            prn=packet_callback,
-            count=1000,
-        )
+        # Initialize a tqdm progress bar
+        packet_count = 10_000
+        with tqdm(desc='Packets Captured', unit=' packets', total=packet_count) as pbar:
+
+            packets = sniff(
+                iface="en0",
+                prn=custom_action,
+                count=packet_count
+                # stop_filter=lambda x: pbar.n >= packet_count
+            )
 
     df = construct_dataframe_from_capture(packets)
-    # try_sankey(df)
-    try_sunburst(df, metric="frames")
+    try_sankey(df, metric="length")
+    # try_sunburst(df, metric="frames")
     return 0
 
 
