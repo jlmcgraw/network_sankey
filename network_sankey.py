@@ -14,20 +14,21 @@
 
 
 import argparse
+import hashlib
 import logging
 import sys
 from enum import Enum
 from itertools import pairwise
 
+import dash
 import pandas as pd
 import plotly.graph_objects as go
 import scapy.packet
-from dash import Dash, html, dcc, Output, Input
+from dash import Dash, Input, Output, State, dcc, html
 from plotly.graph_objects import FigureWidget
-from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff, rdpcap
-import hashlib
+from scapy.all import get_if_addr, get_if_hwaddr, get_if_list, rdpcap, sniff
 
-from models import MacAddressInterfaceDict, Direction, Scope, IpAddressInterfaceDict, ethernet_type_to_protocol_lookup
+from models import Direction, IpAddressInterfaceDict, MacAddressInterfaceDict, Scope, ethernet_type_to_protocol_lookup
 
 # Do this to suppress warnings when loading scapy module
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
@@ -45,8 +46,7 @@ def get_color_for_label(label: str) -> str:
 
 
 def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
-    """
-    Determine whether frame is broadcast, multicast, or unicast
+    """Determine whether frame is broadcast, multicast, or unicast
     :param frame:
     :return:
     """
@@ -70,8 +70,7 @@ def determine_frame_direction(frame: scapy.packet.Packet, my_mac_addresses: MacA
 
 
 def create_mac_to_interface_mapping() -> MacAddressInterfaceDict:
-    """
-    Create a mac->interface mapping dict
+    """Create a mac->interface mapping dict
     :return:
     """
     mac_addresses_mapping_dict: MacAddressInterfaceDict = dict()
@@ -90,8 +89,7 @@ def create_mac_to_interface_mapping() -> MacAddressInterfaceDict:
 
 
 def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
-    """
-    Create an ip->interface mapping dict
+    """Create an ip->interface mapping dict
     :return:
     """
     ip_to_interface_dict: IpAddressInterfaceDict = dict()
@@ -110,10 +108,9 @@ def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
 
 
 def compute_sankey_data(
-    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface"
+    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface",
 ) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
     """Return labels, links and optional x positions for a Sankey diagram."""
-
     dir_path = {
         "receive": {
             "path": [
@@ -267,10 +264,9 @@ def compute_sankey_data(
 
 
 def create_sankey_figure(
-    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames", interface_label: str = "interface"
+    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames", interface_label: str = "interface",
 ) -> FigureWidget:
     """Create a Sankey figure widget from dataframe."""
-
     labels, sources, targets, values_list, node_x = compute_sankey_data(df, direction, metric, interface_label)
 
     fig = FigureWidget(
@@ -285,8 +281,8 @@ def create_sankey_figure(
                     **({"x": node_x} if node_x is not None else {}),
                 ),
                 link=dict(source=sources, target=targets, value=values_list),
-            )
-        ]
+            ),
+        ],
     )
     fig.update_layout(title_text=f"Network {direction} {metric}", font_size=10)
     return fig
@@ -300,7 +296,6 @@ def update_sankey_figure(
     interface_label: str = "interface",
 ) -> None:
     """Update the given Sankey figure widget using data from ``df``."""
-
     labels, sources, targets, values_list, node_x = compute_sankey_data(df, direction, metric, interface_label)
     fig.data[0].node.update(
         label=labels,
@@ -319,7 +314,6 @@ def create_and_display_sankey_diagram(
     interface_label: str = "interface",
 ) -> FigureWidget:
     """Return a Sankey diagram as a :class:`FigureWidget`."""
-
     return create_sankey_figure(df, direction, metric, interface_label)
 
 
@@ -412,8 +406,7 @@ def construct_dataframe_from_capture(
     packets: scapy.all.PacketList,
     mac_address_to_interface_mapping: MacAddressInterfaceDict,
 ) -> pd.DataFrame:
-    """
-    Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
+    """Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
 
     :param packets:
     :param mac_address_to_interface_mapping:
@@ -502,8 +495,7 @@ def construct_dataframe_from_capture_using_tshark(
     packets: scapy.all.PacketList,
     mac_address_to_interface_mapping: MacAddressInterfaceDict,
 ) -> pd.DataFrame:
-    """
-    Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
+    """Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
 
     :param packets:
     :param mac_address_to_interface_mapping:
@@ -636,16 +628,45 @@ def main():
         app.layout = html.Div(
             [
                 dcc.Graph(id="graph", figure=fig),
+                html.Button("Pause", id="pause-button", n_clicks=0),
+                html.Button("Clear", id="clear-button", n_clicks=0),
                 dcc.Interval(id="interval", interval=3000, n_intervals=0),
-            ]
+                dcc.Store(id="paused", data=False),
+            ],
         )
+
+        @app.callback(
+            Output("pause-button", "children"),
+            Output("paused", "data"),
+            Input("pause-button", "n_clicks"),
+            State("paused", "data"),
+        )
+        def toggle_pause(n_clicks, paused):
+            if n_clicks is None or n_clicks == 0:
+                return "Pause", paused
+            paused = not paused
+            return ("Unpause" if paused else "Pause"), paused
 
         @app.callback(
             Output("graph", "figure"),
             Input("interval", "n_intervals"),
+            Input("clear-button", "n_clicks"),
+            State("paused", "data"),
         )
-        def update_graph(_):
+        def update_graph(n_intervals, clear_clicks, paused):
             nonlocal df
+            triggered = dash.callback_context.triggered_id
+            if triggered == "clear-button":
+                df = pd.DataFrame()
+                update_sankey_figure(
+                    fig,
+                    df,
+                    direction=direction,
+                    interface_label=capture_interface,
+                )
+                return fig
+            if paused:
+                return fig
             packets = sniff(iface=capture_interface, count=batch_size, timeout=1)
             if packets:
                 new_df = construct_dataframe_from_capture(
@@ -664,7 +685,7 @@ def main():
             if not packets:
                 continue
             new_df = construct_dataframe_from_capture(
-                packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict
+                packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict,
             )
             df = pd.concat([df, new_df], ignore_index=True)
             update_sankey_figure(fig, df, direction=direction, interface_label=capture_interface)
