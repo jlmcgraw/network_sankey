@@ -200,37 +200,68 @@ def compute_sankey_data(
     if df.empty:
         return [], [], [], [], None
 
-    inbound = df.query('direction == "receive"')
-    outbound = df.query('direction == "transmit"')
+    df = df.copy()
+    df["interface_label"] = interface_label
 
-    inbound_df = inbound.assign(remote=inbound["l3_source"].fillna(inbound["source_mac"]))
-    outbound_df = outbound.assign(remote=outbound["l3_destination"].fillna(outbound["destination_mac"]))
+    inbound_df = df.query('direction == "receive"').copy()
+    outbound_df = df.query('direction == "transmit"').copy()
 
-    inbound_agg = inbound_df.groupby("remote")[metric].sum()
-    outbound_agg = outbound_df.groupby("remote")[metric].sum()
+    inbound_path = [
+        "l4_source",
+        "l3_type",
+        "l3_source",
+        "type",
+        "source_mac",
+        "interface_label",
+    ]
+    outbound_path = [
+        "interface_label",
+        "destination_mac",
+        "type",
+        "l3_destination",
+        "l3_type",
+        "l4_destination",
+    ]
 
-    inbound_nodes = list(inbound_agg.index.unique())
-    outbound_nodes = list(outbound_agg.index.unique())
+    if not set(inbound_path + outbound_path).issubset(df.columns):
+        return [], [], [], [], None
 
-    labels = inbound_nodes + [interface_label] + outbound_nodes
-    interface_index = len(inbound_nodes)
-    node_x = [0.0] * len(inbound_nodes) + [0.5] + [1.0] * len(outbound_nodes)
+    def accumulate(dir_df: pd.DataFrame, path: list[str]) -> pd.DataFrame:
+        path_pairs = list(pairwise(path))
+        combined = pd.DataFrame()
+        for source, target in path_pairs:
+            agg = (
+                dir_df.groupby([source, target], dropna=False)[metric]
+                .sum()
+                .reset_index()
+            )
+            agg["Source"] = agg[source]
+            agg["Target"] = agg[target]
+            agg["Value"] = agg[metric]
+            combined = pd.concat([combined, agg])
+        return combined
 
-    sources = []
-    targets = []
-    values_list = []
+    combined_df = pd.concat(
+        [accumulate(inbound_df, inbound_path), accumulate(outbound_df, outbound_path)],
+        ignore_index=True,
+    )
 
-    for idx, value in enumerate(inbound_agg.tolist()):
-        sources.append(idx)
-        targets.append(interface_index)
-        values_list.append(value)
+    all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).unique()
+    node_indices = {node: idx for idx, node in enumerate(all_nodes)}
+    sources = combined_df["Source"].map(node_indices).tolist()
+    targets = combined_df["Target"].map(node_indices).tolist()
+    values_list = combined_df["Value"].tolist()
 
-    for idx, value in enumerate(outbound_agg.tolist()):
-        sources.append(interface_index)
-        targets.append(interface_index + 1 + idx)
-        values_list.append(value)
+    inbound_nodes = pd.concat([inbound_df[col] for col in inbound_path]).unique().tolist()
+    outbound_nodes = pd.concat([outbound_df[col] for col in outbound_path]).unique().tolist()
+    node_x = [0.0] * len(all_nodes)
+    for node in outbound_nodes:
+        node_x[node_indices[node]] = 1.0
+    for node in inbound_nodes:
+        node_x[node_indices[node]] = 0.0
+    node_x[node_indices[interface_label]] = 0.5
 
-    return labels, sources, targets, values_list, node_x
+    return list(all_nodes), sources, targets, values_list, node_x
 
 
 def create_sankey_figure(
