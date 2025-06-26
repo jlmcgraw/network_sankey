@@ -10,6 +10,7 @@ In the future, I'd like to find methods to:
   - For MaCOS, its included BPF utility will allow you to capture packets as a regular user
 - create/activate a venv
 - pip install -r requirements.txt
+- pip install ipywidgets  # needed for live updating with the --dash flag
 
 ### Live mode
 
