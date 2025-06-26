@@ -108,9 +108,28 @@ def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
 
 
 def compute_sankey_data(
-    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface",
+    df: pd.DataFrame,
+    direction: str,
+    metric: str,
+    interface_label: str = "interface",
+    *,
+    sort_nodes: bool = False,
 ) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
-    """Return labels, links and optional x positions for a Sankey diagram."""
+    """Return labels, links and optional x positions for a Sankey diagram.
+
+    Parameters
+    ----------
+    df:
+        DataFrame containing captured frame information.
+    direction:
+        Either ``"transmit"`` or ``"receive"`` or ``"both"``.
+    metric:
+        Name of the numeric column to aggregate for link weights.
+    interface_label:
+        Label used for the interface node when ``direction`` is ``"both"``.
+    sort_nodes:
+        If ``True``, nodes are sorted alphabetically before being displayed.
+    """
     dir_path = {
         "receive": {
             "path": [
@@ -144,6 +163,8 @@ def compute_sankey_data(
 
         path_pairs = list(pairwise(values["path"]))
         all_nodes = pd.concat([df[col] for col in values["path"]]).dropna().unique()
+        if sort_nodes:
+            all_nodes = sorted(all_nodes)
         node_indices = {node: idx for idx, node in enumerate(all_nodes)}
 
         combined_df = pd.DataFrame()
@@ -243,6 +264,8 @@ def compute_sankey_data(
     )
 
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
+    if sort_nodes:
+        all_nodes = sorted(all_nodes)
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
     sources = combined_df["Source"].map(node_indices).tolist()
     targets = combined_df["Target"].map(node_indices).tolist()
@@ -281,10 +304,21 @@ def compute_sankey_data(
 
 
 def create_sankey_figure(
-    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames", interface_label: str = "interface",
+    df: pd.DataFrame,
+    direction: str = "transmit",
+    metric: str = "frames",
+    interface_label: str = "interface",
+    *,
+    sort_nodes: bool = False,
 ) -> FigureWidget:
     """Create a Sankey figure widget from dataframe."""
-    labels, sources, targets, values_list, node_x = compute_sankey_data(df, direction, metric, interface_label)
+    labels, sources, targets, values_list, node_x = compute_sankey_data(
+        df,
+        direction,
+        metric,
+        interface_label,
+        sort_nodes=sort_nodes,
+    )
 
     fig = FigureWidget(
         data=[
@@ -311,9 +345,17 @@ def update_sankey_figure(
     direction: str = "transmit",
     metric: str = "frames",
     interface_label: str = "interface",
+    *,
+    sort_nodes: bool = False,
 ) -> None:
     """Update the given Sankey figure widget using data from ``df``."""
-    labels, sources, targets, values_list, node_x = compute_sankey_data(df, direction, metric, interface_label)
+    labels, sources, targets, values_list, node_x = compute_sankey_data(
+        df,
+        direction,
+        metric,
+        interface_label,
+        sort_nodes=sort_nodes,
+    )
     fig.data[0].node.update(
         label=labels,
         color=[get_color_for_label(label) for label in labels],
@@ -329,9 +371,17 @@ def create_and_display_sankey_diagram(
     direction: str = "transmit",
     metric: str = "frames",
     interface_label: str = "interface",
+    *,
+    sort_nodes: bool = False,
 ) -> FigureWidget:
     """Return a Sankey diagram as a :class:`FigureWidget`."""
-    return create_sankey_figure(df, direction, metric, interface_label)
+    return create_sankey_figure(
+        df,
+        direction,
+        metric,
+        interface_label,
+        sort_nodes=sort_nodes,
+    )
 
 
 # def try_sunburst(df, metric=None):
@@ -608,6 +658,11 @@ def parse_command_line_arguments():
         default="transmit",
         help="Traffic direction to display in the Sankey diagram",
     )
+    parser.add_argument(
+        "--sort-nodes",
+        action="store_true",
+        help="Sort nodes alphabetically by their label",
+    )
 
     args = parser.parse_args()
     return args
@@ -620,6 +675,7 @@ def main():
     capture_interface = args.interface
     use_dash = args.dash
     direction = args.direction
+    sort_nodes = args.sort_nodes
 
     # List all MAC addresses
     mac_addresses_mapping_dict = create_mac_to_interface_mapping()
@@ -632,8 +688,16 @@ def main():
             print(f"Unable to load packet capture '{packet_capture_file}': {e}")
             return 1
 
-        df = construct_dataframe_from_capture(packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict)
-        fig = create_and_display_sankey_diagram(df, direction=direction, interface_label=capture_interface)
+        df = construct_dataframe_from_capture(
+            packets,
+            mac_address_to_interface_mapping=mac_addresses_mapping_dict,
+        )
+        fig = create_and_display_sankey_diagram(
+            df,
+            direction=direction,
+            interface_label=capture_interface,
+            sort_nodes=sort_nodes,
+        )
         fig.show()
         return 0
 
@@ -643,6 +707,7 @@ def main():
         direction=direction,
         metric="frames",
         interface_label=capture_interface,
+        sort_nodes=sort_nodes,
     )
 
     if use_dash:
@@ -657,7 +722,7 @@ def main():
                 dcc.Interval(id="interval", interval=3000, n_intervals=0),
                 dcc.Store(id="paused", data=False),
                 dcc.Store(id="metric", data="frames"),
-            ]
+            ],
         )
 
         @app.callback(
@@ -705,9 +770,10 @@ def main():
                     direction=direction,
                     metric=metric,
                     interface_label=capture_interface,
+                    sort_nodes=sort_nodes,
                 )
                 counts = "RX 0 {unit} | TX 0 {unit}".format(
-                    unit="bytes" if metric == "length" else "frames"
+                    unit="bytes" if metric == "length" else "frames",
                 )
                 return fig, counts
             if paused:
@@ -729,6 +795,7 @@ def main():
                     direction=direction,
                     metric=metric,
                     interface_label=capture_interface,
+                    sort_nodes=sort_nodes,
                 )
             total_in = int(df.query('direction == "receive"')[metric].sum())
             total_out = int(df.query('direction == "transmit"')[metric].sum())
@@ -753,6 +820,7 @@ def main():
                 direction=direction,
                 metric="frames",
                 interface_label=capture_interface,
+                sort_nodes=sort_nodes,
             )
             total_in = int(df.query('direction == "receive"')["frames"].sum())
             total_out = int(df.query('direction == "transmit"')["frames"].sum())

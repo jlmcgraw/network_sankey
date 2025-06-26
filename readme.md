@@ -22,6 +22,8 @@ Run the tool without a capture file to sniff packets continuously. The diagram w
 ./src/network_sankey.py --interface en0 --dash --direction both
 ```
 
+Pass the `--sort-nodes` flag to alphabetically sort nodes by name.
+
 The figure starts empty and populates as traffic is captured. You can control how many packets are processed in each batch with `--batch-size`.
 Use the **Pause** button to temporarily stop capturing traffic and **Clear** to reset the diagram.
 
@@ -34,10 +36,10 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 - Tooltips cover the flows
 - Provide a rolling window of the capture (eg last 30 seconds)
 - Display a diagram in native GUI without using browser
-- Sort nodes
 
 ## Done
 - Consistent node colors between updates
 - Unified diagram ( in -> interface -> out)
 - Capture pause/resume and clear buttons
 - Display a running count of packets/frames/bytes in/out
+- Sort nodes alphabetically with `--sort-nodes`
