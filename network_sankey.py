@@ -248,17 +248,34 @@ def compute_sankey_data(
     targets = combined_df["Target"].map(node_indices).tolist()
     values_list = combined_df["Value"].tolist()
 
-    inbound_nodes = pd.concat([inbound_df[col] for col in inbound_path]).dropna().unique().tolist()
-    outbound_nodes = pd.concat([outbound_df[col] for col in outbound_path]).dropna().unique().tolist()
-    node_x = [0.0] * len(all_nodes)
-    for node in outbound_nodes:
-        if node in node_indices:
-            node_x[node_indices[node]] = 1.0
-    for node in inbound_nodes:
-        if node in node_indices:
-            node_x[node_indices[node]] = 0.0
-    if interface_label in node_indices:
-        node_x[node_indices[interface_label]] = 0.5
+    inbound_column_x = {
+        "l4_source": 0.0,
+        "l3_type": 0.2,
+        "l3_source": 0.2,
+        "type": 0.4,
+        "source_mac": 0.4,
+        "interface_label": 0.5,
+    }
+    outbound_column_x = {
+        "interface_label": 0.5,
+        "destination_mac": 0.6,
+        "type": 0.6,
+        "l3_destination": 0.8,
+        "l3_type": 0.8,
+        "l4_destination": 1.0,
+    }
+
+    node_x_map: dict[str, float] = {}
+    for col, x in inbound_column_x.items():
+        if col in inbound_df:
+            for val in inbound_df[col].dropna().unique():
+                node_x_map[val] = x
+    for col, x in outbound_column_x.items():
+        if col in outbound_df:
+            for val in outbound_df[col].dropna().unique():
+                node_x_map[val] = x
+
+    node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
     return list(all_nodes), sources, targets, values_list, node_x
 
