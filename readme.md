@@ -22,7 +22,6 @@ python network_sankey.py --interface en0 --dash --direction both
 The figure starts empty and populates as traffic is captured. You can control how many packets are processed in each batch with `--batch-size`.
 
 ## Todo
-- Consistent node colors between updates (eg hash them and map to color)
 - Remove the TX/RX labels but still differentiate between RX/TX
 - Consistent colors between updates
 - A toggle for name resolution, or name resolution in the tooltip
@@ -35,4 +34,5 @@ The figure starts empty and populates as traffic is captured. You can control ho
 - Display a diagram in native GUI without using browser
 
 ## Done
+- Consistent node colors between updates
 - Unified diagram ( in -> interface -> out)
