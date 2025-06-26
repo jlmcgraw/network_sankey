@@ -653,12 +653,17 @@ def main():
             Input("clear-button", "n_clicks"),
             State("paused", "data"),
         )
-        def update_graph(_, clear_clicks, paused):
+        def update_graph(n_intervals, clear_clicks, paused):
             nonlocal df
-            ctx = dash.callback_context
-            if ctx.triggered and ctx.triggered[0]["prop_id"].startswith("clear-button"):
+            triggered = dash.callback_context.triggered_id
+            if triggered == "clear-button":
                 df = pd.DataFrame()
-                update_sankey_figure(fig, df, direction=direction, interface_label=capture_interface)
+                update_sankey_figure(
+                    fig,
+                    df,
+                    direction=direction,
+                    interface_label=capture_interface,
+                )
                 return fig
             if paused:
                 return fig
