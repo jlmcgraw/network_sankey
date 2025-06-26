@@ -1,4 +1,4 @@
-Currently, this will load 4x Sankey diagrams in a web browser: traffic in/out by bytes/packets
+Currently, this will load 4x Sankey diagrams in a web browser: traffic in/out by bytes/packets. A new live mode can capture packets continuously and update the diagram in real time.
 
 In the future, I'd like to find methods to:
 - Display a diagram in native GUI without using browser
@@ -10,4 +10,14 @@ In the future, I'd like to find methods to:
   - For MaCOS, its included BPF utility will allow you to capture packets as a regular user
 - create/activate a venv
 - pip install -r requirements.txt
+
+### Live mode
+
+Run the tool without a capture file to sniff packets continuously. The diagram will refresh automatically when using the `--dash` flag:
+
+```bash
+python network_sankey.py --interface en0 --dash
+```
+
+You can control how many packets are processed in each batch with `--batch-size`.
 

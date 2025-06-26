@@ -2,20 +2,20 @@ import argparse
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 from itertools import pairwise
 from typing import Union
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.graph_objects import FigureWidget
 import scapy.packet
+from dash import Dash, html, dcc, Output, Input
+from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff
+from scapy.all import rdpcap
 
 # Do this to suppress warnings when loading scapy module
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
-from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff
-from scapy.all import rdpcap, wrpcapng
-from tqdm import tqdm
 
 MacAddress = str
 IPv4Address = str
@@ -133,16 +133,11 @@ def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
     return ip_to_interface_dict
 
 
-def create_and_display_sankey_diagram(df: pd.DataFrame):
-    """
-    Using the dataframe, create inputs for the Sankey diagrams and then display them
-    :param df:
-    :return:
-    """
-    # I'd really like to be able to trace a flow from beginning to end
-    #  ex: https://public.tableau.com/app/profile/actinvision/viz/SuperstoreSankeyShowcaseLOD/Sankey
+def compute_sankey_data(
+    df: pd.DataFrame, direction: str, metric: str
+) -> tuple[list[str], list[int], list[int], list[int]]:
+    """Return labels and link data for a Sankey diagram."""
 
-    # data for which fields to use for the "path" when showing receive/transmit
     dir_path = {
         "receive": {
             "path": [
@@ -153,8 +148,6 @@ def create_and_display_sankey_diagram(df: pd.DataFrame):
                 "source_mac",
                 "destination_mac",
             ],
-            "col": 1,
-            "row": 1,
             "alignment": "right",
         },
         "transmit": {
@@ -166,79 +159,79 @@ def create_and_display_sankey_diagram(df: pd.DataFrame):
                 "l3_type",
                 "l4_destination",
             ],
-            "col": 2,
-            "row": 1,
             "alignment": "left",
         },
     }
-    # The idea here is to do a groupby for each pair of columns from the "path" in order to create the
-    # count for them (eg frames or bytes)
-    for metric in ["length", "frames"]:
-        for direction, values in dir_path.items():
-            # Create the pairs from the list
-            # eg [ A, B, C, D] -> (A,B ), (B,C), (C,D)
-            path_pairs = list(pairwise(values["path"]))
 
-            # Map each unique value of interesting fields to an index number to give to sankey
-            all_nodes = pd.concat(
-                [df[column_name] for column_name in values["path"]]
-            ).unique()
-            node_indices = {node: index for index, node in enumerate(all_nodes)}
+    values = dir_path[direction]
+    path_pairs = list(pairwise(values["path"]))
+    all_nodes = pd.concat([df[col] for col in values["path"]]).unique()
+    node_indices = {node: idx for idx, node in enumerate(all_nodes)}
 
-            combined_df = pd.DataFrame()
+    combined_df = pd.DataFrame()
+    for source, target in path_pairs:
+        agg_data = (
+            df.query(f'direction == "{direction}"')
+            .groupby([source, target], dropna=False)[metric]
+            .sum()
+            .reset_index()
+        )
+        agg_data["SourceID"] = agg_data[source].apply(
+            lambda x: node_indices[x] if pd.notnull(x) else x
+        )
+        agg_data["TargetID"] = agg_data[target].apply(
+            lambda x: node_indices[x] if pd.notnull(x) else x
+        )
+        agg_data["Value"] = agg_data[metric]
+        combined_df = pd.concat([combined_df, agg_data])
 
-            for source, target in path_pairs:
-                agg_data = (
-                    df.query(f'direction == "{direction}"')
-                    .groupby(
-                        [
-                            source,
-                            target,
-                        ],
-                        dropna=False,
-                    )[metric]
-                    .sum()
-                    .reset_index()
-                )
+    sources = combined_df["SourceID"].tolist()
+    targets = combined_df["TargetID"].tolist()
+    values_list = combined_df["Value"].tolist()
 
-                # Apply mapping to the aggregated data
-                # Avoid trying to look up cells that are None/NaN
-                agg_data["SourceID"] = agg_data[source].apply(
-                    lambda x: node_indices[x] if (pd.notnull(x)) else x
-                )
-                agg_data["TargetID"] = agg_data[target].apply(
-                    lambda x: node_indices[x] if (pd.notnull(x)) else x
-                )
-                agg_data["Value"] = agg_data[metric].apply(lambda x: x)
+    return list(all_nodes), sources, targets, values_list
 
-                # Accumulate the dataframe
-                combined_df = pd.concat([combined_df, agg_data])
 
-            # Creating the Sankey diagram
-            fig = go.Figure(
-                data=[
-                    go.Sankey(
-                        node=dict(
-                            pad=15,
-                            thickness=20,
-                            line=dict(color="black", width=0.5),
-                            label=list(all_nodes),
-                            align=values["alignment"],
-                        ),
-                        link=dict(
-                            # indices of source nodes
-                            source=combined_df["SourceID"],
-                            # indices of source nodes
-                            target=combined_df["TargetID"],
-                            # values for each flow
-                            value=combined_df["Value"],
-                        ),
-                    )
-                ]
+def create_sankey_figure(
+    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames"
+) -> FigureWidget:
+    """Create a Sankey figure widget from dataframe."""
+
+    labels, sources, targets, values_list = compute_sankey_data(df, direction, metric)
+
+    fig = FigureWidget(
+        data=[
+            go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=labels,
+                ),
+                link=dict(source=sources, target=targets, value=values_list),
             )
+        ]
+    )
+    fig.update_layout(title_text=f"Network {direction} {metric}", font_size=10)
+    return fig
 
-            fig.update_layout(title_text=f"Network {direction} {metric}", font_size=10)
-            fig.show()
+
+def update_sankey_figure(
+    fig: FigureWidget, df: pd.DataFrame, direction: str = "transmit", metric: str = "frames"
+) -> None:
+    """Update the given Sankey figure widget using data from ``df``."""
+
+    labels, sources, targets, values_list = compute_sankey_data(df, direction, metric)
+    fig.data[0].node.update(label=labels)
+    fig.data[0].update(source=sources, target=targets, value=values_list)
+
+
+def create_and_display_sankey_diagram(
+    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames"
+) -> FigureWidget:
+    """Return a Sankey diagram as a :class:`FigureWidget`."""
+
+    return create_sankey_figure(df, direction, metric)
 
 
 # def try_sunburst(df, metric=None):
@@ -342,7 +335,6 @@ def construct_dataframe_from_capture(
     data = []
 
     for packet in packets:
-        frame_data = FrameData()
         l3_source = None
         l3_destination = None
         l3_type = None
@@ -436,7 +428,6 @@ def construct_dataframe_from_capture_using_tshark(
 
 
     for packet in packets:
-        frame_data = FrameData()
 
         # Layer 2
         if not packet.haslayer("Ether"):
@@ -516,7 +507,12 @@ def parse_command_line_arguments():
         help="Name of capture file to load instead of live traffic",
     )
     parser.add_argument(
-        "--count", type=int, default=1_000, help="Number of packets to capture for live traffic"
+        "--batch-size", type=int, default=100, help="Number of packets to capture per batch"
+    )
+    parser.add_argument(
+        "--dash",
+        action="store_true",
+        help="Use a Dash app to display the live updating diagram",
     )
     parser.add_argument(
         "--interface", type=str, default="en0", help="Interface to use for capture for live traffic"
@@ -527,24 +523,15 @@ def parse_command_line_arguments():
 
 
 def main():
-    def packet_callback(packet):
-        # This is the callback function executed for each packet captured
-        # Update the tqdm progress bar by 1 for each packet
-        pbar.update(1)
-        # You can add more packet processing logic here
-
     args = parse_command_line_arguments()
     packet_capture_file = args.capture_file
-    packet_count = args.count
+    batch_size = args.batch_size
     capture_interface = args.interface
-
-    # List all IP addresses
-    ip_to_interface_mapping_dict = create_ip_to_interface_mapping()
+    use_dash = args.dash
 
     # List all MAC addresses
     mac_addresses_mapping_dict = create_mac_to_interface_mapping()
 
-    # Load packet capture or sniff traffic
     if packet_capture_file:
         print(f"Loading previously captured traffic from '{packet_capture_file}'")
         try:
@@ -552,42 +539,52 @@ def main():
         except Exception as e:
             print(f"Unable to load packet capture '{packet_capture_file}': {e}")
             return 1
+
+        df = construct_dataframe_from_capture(
+            packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict
+        )
+        fig = create_and_display_sankey_diagram(df)
+        fig.show()
+        return 0
+
+    df = pd.DataFrame()
+    fig = create_and_display_sankey_diagram(df)
+
+    if use_dash:
+        app = Dash(__name__)
+        app.layout = html.Div([
+            dcc.Graph(id="graph", figure=fig),
+            dcc.Interval(id="interval", interval=3000, n_intervals=0),
+        ])
+
+        @app.callback(
+            Output("graph", "figure"),
+            Input("interval", "n_intervals"),
+        )
+        def update_graph(_):
+            nonlocal df
+            packets = sniff(iface=capture_interface, count=batch_size, timeout=1)
+            if packets:
+                new_df = construct_dataframe_from_capture(
+                    packets,
+                    mac_address_to_interface_mapping=mac_addresses_mapping_dict,
+                )
+                df = pd.concat([df, new_df], ignore_index=True)
+                update_sankey_figure(fig, df)
+            return fig
+
+        app.run_server(debug=False)
     else:
-        print(f"Capturing {packet_count} packets from interface '{capture_interface}'")
-        # Initialize a tqdm progress bar
-        with tqdm(desc="Packets Captured", unit=" packets", total=packet_count) as pbar:
-            # Capture packets
-            packets = sniff(
-                iface=capture_interface,
-                # Use the callback to update progress bar
-                prn=packet_callback,
-                count=packet_count,
-                # stop_filter=lambda x: pbar.n >= packet_count
+        fig.show()
+        while True:
+            packets = sniff(iface=capture_interface, count=batch_size, timeout=1)
+            if not packets:
+                continue
+            new_df = construct_dataframe_from_capture(
+                packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict
             )
-
-        # Get current date and time
-        now = datetime.now()
-
-        # Format the date and time as a string, for example "2024-03-06"
-        formatted_date = now.strftime("%Y-%m-%d_%H-%M-%S")
-
-        # Define a base filename with the formatted date
-        file_name = f"{formatted_date}.pcapng"
-
-        # Write the packets to the file
-        print(f"Saving captured packets to '{file_name}'")
-        try:
-            wrpcapng(file_name, packets)
-        except Exception as e:
-            print(f"Unable to save packets to capture file '{file_name}': {e}")
-
-    # Construct the dataframe from packets
-    df = construct_dataframe_from_capture(
-        packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict
-    )
-
-    # Create and display the diagram
-    create_and_display_sankey_diagram(df)
+            df = pd.concat([df, new_df], ignore_index=True)
+            update_sankey_figure(fig, df)
 
     # try_sunburst(df, metric="frames")
     return 0
