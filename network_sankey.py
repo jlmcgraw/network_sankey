@@ -134,9 +134,9 @@ def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
 
 
 def compute_sankey_data(
-    df: pd.DataFrame, direction: str, metric: str
-) -> tuple[list[str], list[int], list[int], list[int]]:
-    """Return labels and link data for a Sankey diagram."""
+    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface"
+) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
+    """Return labels, links and optional x positions for a Sankey diagram."""
 
     dir_path = {
         "receive": {
@@ -163,45 +163,84 @@ def compute_sankey_data(
         },
     }
 
-    values = dir_path[direction]
+    if direction in ("receive", "transmit"):
+        values = dir_path[direction]
 
-    if df.empty or not set(values["path"]).issubset(df.columns):
-        return [], [], [], []
+        if df.empty or not set(values["path"]).issubset(df.columns):
+            return [], [], [], [], None
 
-    path_pairs = list(pairwise(values["path"]))
-    all_nodes = pd.concat([df[col] for col in values["path"]]).unique()
-    node_indices = {node: idx for idx, node in enumerate(all_nodes)}
+        path_pairs = list(pairwise(values["path"]))
+        all_nodes = pd.concat([df[col] for col in values["path"]]).unique()
+        node_indices = {node: idx for idx, node in enumerate(all_nodes)}
 
-    combined_df = pd.DataFrame()
-    for source, target in path_pairs:
-        agg_data = (
-            df.query(f'direction == "{direction}"')
-            .groupby([source, target], dropna=False)[metric]
-            .sum()
-            .reset_index()
-        )
-        agg_data["SourceID"] = agg_data[source].apply(
-            lambda x: node_indices[x] if pd.notnull(x) else x
-        )
-        agg_data["TargetID"] = agg_data[target].apply(
-            lambda x: node_indices[x] if pd.notnull(x) else x
-        )
-        agg_data["Value"] = agg_data[metric]
-        combined_df = pd.concat([combined_df, agg_data])
+        combined_df = pd.DataFrame()
+        for source, target in path_pairs:
+            agg_data = (
+                df.query(f'direction == "{direction}"')
+                .groupby([source, target], dropna=False)[metric]
+                .sum()
+                .reset_index()
+            )
+            agg_data["SourceID"] = agg_data[source].apply(
+                lambda x: node_indices[x] if pd.notnull(x) else x
+            )
+            agg_data["TargetID"] = agg_data[target].apply(
+                lambda x: node_indices[x] if pd.notnull(x) else x
+            )
+            agg_data["Value"] = agg_data[metric]
+            combined_df = pd.concat([combined_df, agg_data])
 
-    sources = combined_df["SourceID"].tolist()
-    targets = combined_df["TargetID"].tolist()
-    values_list = combined_df["Value"].tolist()
+        sources = combined_df["SourceID"].tolist()
+        targets = combined_df["TargetID"].tolist()
+        values_list = combined_df["Value"].tolist()
 
-    return list(all_nodes), sources, targets, values_list
+        return list(all_nodes), sources, targets, values_list, None
+
+    # combined receive and transmit view with interface in the middle
+    if df.empty:
+        return [], [], [], [], None
+
+    inbound = df.query('direction == "receive"')
+    outbound = df.query('direction == "transmit"')
+
+    inbound_df = inbound.assign(remote=inbound["l3_source"].fillna(inbound["source_mac"]))
+    outbound_df = outbound.assign(remote=outbound["l3_destination"].fillna(outbound["destination_mac"]))
+
+    inbound_agg = inbound_df.groupby("remote")[metric].sum()
+    outbound_agg = outbound_df.groupby("remote")[metric].sum()
+
+    inbound_nodes = list(inbound_agg.index.unique())
+    outbound_nodes = list(outbound_agg.index.unique())
+
+    labels = inbound_nodes + [interface_label] + outbound_nodes
+    interface_index = len(inbound_nodes)
+    node_x = [0.0] * len(inbound_nodes) + [0.5] + [1.0] * len(outbound_nodes)
+
+    sources = []
+    targets = []
+    values_list = []
+
+    for idx, value in enumerate(inbound_agg.tolist()):
+        sources.append(idx)
+        targets.append(interface_index)
+        values_list.append(value)
+
+    for idx, value in enumerate(outbound_agg.tolist()):
+        sources.append(interface_index)
+        targets.append(interface_index + 1 + idx)
+        values_list.append(value)
+
+    return labels, sources, targets, values_list, node_x
 
 
 def create_sankey_figure(
-    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames"
+    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames", interface_label: str = "interface"
 ) -> FigureWidget:
     """Create a Sankey figure widget from dataframe."""
 
-    labels, sources, targets, values_list = compute_sankey_data(df, direction, metric)
+    labels, sources, targets, values_list, node_x = compute_sankey_data(
+        df, direction, metric, interface_label
+    )
 
     fig = FigureWidget(
         data=[
@@ -211,6 +250,7 @@ def create_sankey_figure(
                     thickness=20,
                     line=dict(color="black", width=0.5),
                     label=labels,
+                    **({"x": node_x} if node_x is not None else {}),
                 ),
                 link=dict(source=sources, target=targets, value=values_list),
             )
@@ -221,22 +261,33 @@ def create_sankey_figure(
 
 
 def update_sankey_figure(
-    fig: FigureWidget, df: pd.DataFrame, direction: str = "transmit", metric: str = "frames"
+    fig: FigureWidget,
+    df: pd.DataFrame,
+    direction: str = "transmit",
+    metric: str = "frames",
+    interface_label: str = "interface",
 ) -> None:
     """Update the given Sankey figure widget using data from ``df``."""
 
-    labels, sources, targets, values_list = compute_sankey_data(df, direction, metric)
+    labels, sources, targets, values_list, node_x = compute_sankey_data(
+        df, direction, metric, interface_label
+    )
     fig.data[0].node.update(label=labels)
+    if node_x is not None:
+        fig.data[0].node.update(x=node_x)
     # update link arrays via the nested link object
     fig.data[0].link.update(source=sources, target=targets, value=values_list)
 
 
 def create_and_display_sankey_diagram(
-    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames"
+    df: pd.DataFrame,
+    direction: str = "transmit",
+    metric: str = "frames",
+    interface_label: str = "interface",
 ) -> FigureWidget:
     """Return a Sankey diagram as a :class:`FigureWidget`."""
 
-    return create_sankey_figure(df, direction, metric)
+    return create_sankey_figure(df, direction, metric, interface_label)
 
 
 # def try_sunburst(df, metric=None):
@@ -522,6 +573,12 @@ def parse_command_line_arguments():
     parser.add_argument(
         "--interface", type=str, default="en0", help="Interface to use for capture for live traffic"
     )
+    parser.add_argument(
+        "--direction",
+        choices=["transmit", "receive", "both"],
+        default="transmit",
+        help="Traffic direction to display in the Sankey diagram",
+    )
 
     args = parser.parse_args()
     return args
@@ -533,6 +590,7 @@ def main():
     batch_size = args.batch_size
     capture_interface = args.interface
     use_dash = args.dash
+    direction = args.direction
 
     # List all MAC addresses
     mac_addresses_mapping_dict = create_mac_to_interface_mapping()
@@ -548,12 +606,16 @@ def main():
         df = construct_dataframe_from_capture(
             packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict
         )
-        fig = create_and_display_sankey_diagram(df)
+        fig = create_and_display_sankey_diagram(
+            df, direction=direction, interface_label=capture_interface
+        )
         fig.show()
         return 0
 
     df = pd.DataFrame()
-    fig = create_and_display_sankey_diagram(df)
+    fig = create_and_display_sankey_diagram(
+        df, direction=direction, interface_label=capture_interface
+    )
 
     if use_dash:
         app = Dash(__name__)
@@ -575,7 +637,9 @@ def main():
                     mac_address_to_interface_mapping=mac_addresses_mapping_dict,
                 )
                 df = pd.concat([df, new_df], ignore_index=True)
-                update_sankey_figure(fig, df)
+                update_sankey_figure(
+                    fig, df, direction=direction, interface_label=capture_interface
+                )
             return fig
 
         app.run(debug=False)
@@ -589,7 +653,9 @@ def main():
                 packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict
             )
             df = pd.concat([df, new_df], ignore_index=True)
-            update_sankey_figure(fig, df)
+            update_sankey_figure(
+                fig, df, direction=direction, interface_label=capture_interface
+            )
 
     # try_sunburst(df, metric="frames")
     return 0

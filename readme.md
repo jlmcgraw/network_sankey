@@ -13,10 +13,10 @@ In the future, I'd like to find methods to:
 
 ### Live mode
 
-Run the tool without a capture file to sniff packets continuously. The diagram will refresh automatically when using the `--dash` flag:
+Run the tool without a capture file to sniff packets continuously. The diagram will refresh automatically when using the `--dash` flag. Use `--direction both` to display inbound and outbound traffic together:
 
 ```bash
-python network_sankey.py --interface en0 --dash
+python network_sankey.py --interface en0 --dash --direction both
 ```
 
 The figure starts empty and populates as traffic is captured. You can control how many packets are processed in each batch with `--batch-size`.
