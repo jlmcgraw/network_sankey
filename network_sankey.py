@@ -1,11 +1,20 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+# "pandas",
+# "plotly",
+# "ruff",
+# "scapy",
+# "tqdm",
+# ]
+# ///
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from itertools import pairwise
-from typing import Union
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,53 +26,7 @@ from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff
 from scapy.all import rdpcap, wrpcapng
 from tqdm import tqdm
 
-MacAddress = str
-IPv4Address = str
-IPv6Address = str
-IpAddress = Union[IPv4Address, IPv6Address]
-Interface = str
-Length = int
-
-IpAddressInterfaceDict = dict[IpAddress, Interface]
-MacAddressInterfaceDict = dict[MacAddress, Interface]
-
-
-@dataclass
-class FrameData:
-    timestamp: str = None
-    source_mac: str = None
-    destination_mac: str = None
-    type: str = None
-    length: int = None
-    direction: str = None
-    scope: str = None
-    frames: int = None
-    l3_source: str = None
-    l3_destination: str = None
-    l3_type: str = None
-    l4_source: str = None
-    l4_destination: str = None
-    highest_protocol: str = None
-
-
-class Scope(Enum):
-    BROADCAST = "broadcast"
-    MULTICAST = "multicast"
-    UNICAST = "unicast"
-
-
-class Direction(Enum):
-    TRANSMIT = "transmit"
-    RECEIVE = "receive"
-
-
-ethernet_type_to_protocol = {
-    0x0800: "IPv4",
-    0x0806: "ARP",
-    0x86DD: "IPv6",
-    0x9104: "Eero",
-    # Add more types as needed
-}
+from models import MacAddressInterfaceDict, Direction, Scope, IpAddressInterfaceDict, FrameData, ethernet_type_to_protocol_lookup
 
 
 def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
@@ -73,8 +36,10 @@ def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
     :return:
     """
     if not frame.haslayer("Ether"):
-        print(f"{frame=}")
-        raise ValueError("Non-Ethernet frame")
+        pass
+        # print(f"No Ether Layer: {frame=}")
+        # print()
+        # raise ValueError("Non-Ethernet frame")
 
     dst_mac = frame.dst
     if dst_mac == "ff:ff:ff:ff:ff:ff":
@@ -87,7 +52,7 @@ def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
 
 def determine_frame_direction(
     frame: scapy.packet.Packet, my_mac_addresses: MacAddressInterfaceDict
-) -> Enum:
+) -> Direction:
     if frame.src in my_mac_addresses:
         return Direction.TRANSMIT
     return Direction.RECEIVE
@@ -172,7 +137,7 @@ def create_and_display_sankey_diagram(df: pd.DataFrame):
         },
     }
     # The idea here is to do a groupby for each pair of columns from the "path" in order to create the
-    # count for them (eg frames or bytes)
+    # count for them (i.e. frames or bytes)
     for metric in ["length", "frames"]:
         for direction, values in dir_path.items():
             # Create the pairs from the list
@@ -183,6 +148,7 @@ def create_and_display_sankey_diagram(df: pd.DataFrame):
             all_nodes = pd.concat(
                 [df[column_name] for column_name in values["path"]]
             ).unique()
+
             node_indices = {node: index for index, node in enumerate(all_nodes)}
 
             combined_df = pd.DataFrame()
@@ -330,7 +296,6 @@ def construct_dataframe_from_capture(
     packets: scapy.all.PacketList,
     mac_address_to_interface_mapping: MacAddressInterfaceDict,
 ) -> pd.DataFrame:
-
     """
     Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
 
@@ -354,25 +319,30 @@ def construct_dataframe_from_capture(
         # print(packet.layers())
 
         # Layer 2
-        if not packet.haslayer("Ether"):
-            print(f"{packet=}")
-            raise ValueError(f"Non-Ethernet frame: {packet}")
-        ethernet_frame = packet.getlayer("Ether")
-        ethernet_frame_type = f"{ethernet_frame.type:#06x}"
-        ethernet_frame_type = ethernet_type_to_protocol.get(
-            ethernet_frame.type, ethernet_frame_type
-        )
-        # print(f"{ethernet_frame_type=}")
+        if  packet.haslayer("Ether"):
+
+            ethernet_frame = packet.getlayer("Ether")
+            ethernet_frame_type = f"{ethernet_frame.type:#06x}"
+            ethernet_frame_type = ethernet_type_to_protocol_lookup.get(
+                ethernet_frame.type, ethernet_frame_type
+            )
+        else:
+            print(f"No Ether layer, skipping")
+            frame_direction = determine_frame_direction(packet, mac_address_to_interface_mapping).value
+            frame_scope = determine_frame_scope(packet).value
+            print(f"{frame_scope=}, {frame_direction=}")
+            continue
+
         # Layer 3
         if packet.haslayer("IP"):
             l3_source = packet["IP"].src
             l3_destination = packet["IP"].dst
             l3_type = packet["IP"].proto
-            # print(f"IP {l3_type=}")
+
             try:
                 l3_type = packet["IP"].get_field("proto").i2s[l3_type]
                 l3_type = l3_type.upper()
-                # print(f"{l3_type=}")
+
             except AttributeError:
                 pass
         elif packet.haslayer("IPv6"):
@@ -396,6 +366,9 @@ def construct_dataframe_from_capture(
             l4_source = packet["TCP"].sport
             l4_destination = packet["TCP"].dport
 
+        frame_direction = determine_frame_direction(packet, mac_address_to_interface_mapping).value
+        frame_scope = determine_frame_scope(packet).value
+
         packet_data = {
             "timestamp": packet.time,
             "source_mac": ethernet_frame.src,
@@ -403,8 +376,8 @@ def construct_dataframe_from_capture(
             "type": ethernet_frame_type,
             "length": len(packet),
             # "interface": {my}
-            "direction": f"{determine_frame_direction(packet, mac_address_to_interface_mapping).value}",
-            "scope": f"{determine_frame_scope(packet).value}",
+            "direction": f"{frame_direction}",
+            "scope": f"{frame_scope}",
             "frames": 1,
             "l3_source": l3_source,
             "l3_destination": l3_destination,
@@ -420,89 +393,89 @@ def construct_dataframe_from_capture(
     return df
 
 
-def construct_dataframe_from_capture_using_tshark(
-    packets: scapy.all.PacketList,
-    mac_address_to_interface_mapping: MacAddressInterfaceDict,
-) -> pd.DataFrame:
-    """
-    Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
-
-    :param packets:
-    :param mac_address_to_interface_mapping:
-    :return:
-    """
-    # Layer 2
-    data = []
-
-
-    for packet in packets:
-        frame_data = FrameData()
-
-        # Layer 2
-        if not packet.haslayer("Ether"):
-            print(f"{packet=}")
-            raise ValueError(f"Non-Ethernet frame: {packet}")
-        ethernet_frame = packet.getlayer("Ether")
-        ethernet_frame_type = f"{ethernet_frame.type:#06x}"
-        ethernet_frame_type = ethernet_type_to_protocol.get(
-            ethernet_frame.type, ethernet_frame_type
-        )
-        # print(f"{ethernet_frame_type=}")
-        # Layer 3
-        if packet.haslayer("IP"):
-            l3_source = packet["IP"].src
-            l3_destination = packet["IP"].dst
-            l3_type = packet["IP"].proto
-            # print(f"IP {l3_type=}")
-            try:
-                l3_type = packet["IP"].get_field("proto").i2s[l3_type]
-                l3_type = l3_type.upper()
-                # print(f"{l3_type=}")
-            except AttributeError:
-                pass
-        elif packet.haslayer("IPv6"):
-            l3_source = packet["IPv6"].src
-            l3_destination = packet["IPv6"].dst
-            l3_type = packet["IPv6"].nh
-            # print(f"IPv6 {l3_type=}")
-            try:
-                l3_type = packet["IPv6"].get_field("nh").i2s[l3_type]
-                l3_type = l3_type.upper()
-
-                # print(f"{l3_type=}")
-            except AttributeError:
-                pass
-
-        # Layer 4
-        if packet.haslayer("UDP"):
-            l4_source = packet["UDP"].sport
-            l4_destination = packet["UDP"].dport
-        elif packet.haslayer("TCP"):
-            l4_source = packet["TCP"].sport
-            l4_destination = packet["TCP"].dport
-
-        packet_data = {
-            "timestamp": packet.time,
-            "source_mac": ethernet_frame.src,
-            "destination_mac": ethernet_frame.dst,
-            "type": ethernet_frame_type,
-            "length": len(packet),
-            # "interface": {my}
-            "direction": f"{determine_frame_direction(packet, mac_address_to_interface_mapping).value}",
-            "scope": f"{determine_frame_scope(packet).value}",
-            "frames": 1,
-            "l3_source": l3_source,
-            "l3_destination": l3_destination,
-            "l3_type": l3_type,
-            "l4_source": l4_source,
-            "l4_destination": l4_destination,
-        }
-
-        data.append(packet_data)
-
-    df = pd.DataFrame(data)
-    # df.fillna(value=np.nan, inplace=True)
-    return df
+# def construct_dataframe_from_capture_using_tshark(
+#     packets: scapy.all.PacketList,
+#     mac_address_to_interface_mapping: MacAddressInterfaceDict,
+# ) -> pd.DataFrame:
+#     """
+#     Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
+#
+#     :param packets:
+#     :param mac_address_to_interface_mapping:
+#     :return:
+#     """
+#     # Layer 2
+#     data = []
+#
+#     for packet in packets:
+#         frame_data = FrameData()
+#
+#         # Layer 2
+#         if not packet.haslayer("Ether"):
+#             print(f"{packet=}")
+#             # raise ValueError(f"Non-Ethernet frame: {packet}")
+#         ethernet_frame = packet.getlayer("Ether")
+#         ethernet_frame_type = f"{ethernet_frame.type:#06x}"
+#         ethernet_frame_type = ethernet_type_to_protocol_lookup.get(
+#             ethernet_frame.type, ethernet_frame_type
+#         )
+#         # print(f"{ethernet_frame_type=}")
+#         # Layer 3
+#         if packet.haslayer("IP"):
+#             l3_source = packet["IP"].src
+#             l3_destination = packet["IP"].dst
+#             l3_type = packet["IP"].proto
+#             # print(f"IP {l3_type=}")
+#             try:
+#                 l3_type = packet["IP"].get_field("proto").i2s[l3_type]
+#                 l3_type = l3_type.upper()
+#                 # print(f"{l3_type=}")
+#             except AttributeError:
+#                 pass
+#         elif packet.haslayer("IPv6"):
+#             l3_source = packet["IPv6"].src
+#             l3_destination = packet["IPv6"].dst
+#             l3_type = packet["IPv6"].nh
+#             # print(f"IPv6 {l3_type=}")
+#             try:
+#                 l3_type = packet["IPv6"].get_field("nh").i2s[l3_type]
+#                 l3_type = l3_type.upper()
+#
+#                 # print(f"{l3_type=}")
+#             except AttributeError:
+#                 pass
+#
+#         # Layer 4
+#         if packet.haslayer("UDP"):
+#             l4_source = packet["UDP"].sport
+#             l4_destination = packet["UDP"].dport
+#         elif packet.haslayer("TCP"):
+#             l4_source = packet["TCP"].sport
+#             l4_destination = packet["TCP"].dport
+#         frame_direction = determine_frame_direction(packet, mac_address_to_interface_mapping).value
+#         frame_scope= determine_frame_scope(packet).value
+#         packet_data = {
+#             "timestamp": packet.time,
+#             "source_mac": ethernet_frame.src,
+#             "destination_mac": ethernet_frame.dst,
+#             "type": ethernet_frame_type,
+#             "length": len(packet),
+#             # "interface": {my}
+#             "direction": f"{frame_direction}",
+#             "scope": f"{frame_scope}",
+#             "frames": 1,
+#             "l3_source": l3_source,
+#             "l3_destination": l3_destination,
+#             "l3_type": l3_type,
+#             "l4_source": l4_source,
+#             "l4_destination": l4_destination,
+#         }
+#
+#         data.append(packet_data)
+#
+#     df = pd.DataFrame(data)
+#     # df.fillna(value=np.nan, inplace=True)
+#     return df
 
 
 def parse_command_line_arguments():
@@ -516,10 +489,16 @@ def parse_command_line_arguments():
         help="Name of capture file to load instead of live traffic",
     )
     parser.add_argument(
-        "--count", type=int, default=1_000, help="Number of packets to capture for live traffic"
+        "--count",
+        type=int,
+        default=1_000,
+        help="Number of packets to capture for live traffic",
     )
     parser.add_argument(
-        "--interface", type=str, default="en0", help="Interface to use for capture for live traffic"
+        "--interface",
+        type=str,
+        default="en0",
+        help="Interface to use for capture for live traffic",
     )
 
     args = parser.parse_args()
@@ -540,10 +519,11 @@ def main():
 
     # List all IP addresses
     ip_to_interface_mapping_dict = create_ip_to_interface_mapping()
-
+    print(f"{ip_to_interface_mapping_dict=}")
     # List all MAC addresses
-    mac_addresses_mapping_dict = create_mac_to_interface_mapping()
 
+    mac_addresses_mapping_dict = create_mac_to_interface_mapping()
+    print(f"{mac_addresses_mapping_dict=}")
     # Load packet capture or sniff traffic
     if packet_capture_file:
         print(f"Loading previously captured traffic from '{packet_capture_file}'")
