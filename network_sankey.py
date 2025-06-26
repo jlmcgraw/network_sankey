@@ -211,6 +211,37 @@ def compute_sankey_data(
     inbound_df = df.query('direction == "receive"').copy()
     outbound_df = df.query('direction == "transmit"').copy()
 
+    def prefix_columns(dir_df: pd.DataFrame, cols: list[str], prefix: str) -> None:
+        for col in cols:
+            if col in dir_df:
+                dir_df[col] = dir_df[col].apply(
+                    lambda x: f"{prefix}{x}" if pd.notnull(x) else x
+                )
+
+    prefix_columns(
+        inbound_df,
+        [
+            "l4_source",
+            "l3_type",
+            "l3_source",
+            "type",
+            "source_mac",
+        ],
+        "RX ",
+    )
+
+    prefix_columns(
+        outbound_df,
+        [
+            "destination_mac",
+            "type",
+            "l3_destination",
+            "l3_type",
+            "l4_destination",
+        ],
+        "TX ",
+    )
+
     inbound_path = [
         "l4_source",
         "l3_type",
