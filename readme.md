@@ -3,12 +3,15 @@ Display a Sankey diagram of network traffic into/out of an interface
 ## Getting Started
 - Install wireshark
   - For MaCOS, its included BPF utility will allow you to capture packets as a regular user
-- create/activate a venv
-- pip install -r requirements.txt
+- create and activate a venv
+```commandline
+pip install .
+```
+
 
 If you have uv installed you can execute this script directly
 ```bash
-./network_sankey.py --dash --interface en0 --direction both
+./src/network_sankey.py --help
 ```
 
 ### Live mode
@@ -16,7 +19,7 @@ If you have uv installed you can execute this script directly
 Run the tool without a capture file to sniff packets continuously. The diagram will refresh automatically when using the `--dash` flag. Use `--direction both` to display inbound and outbound traffic together:
 
 ```bash
-python network_sankey.py --interface en0 --dash --direction both
+./src/network_sankey.py --interface en0 --dash --direction both
 ```
 
 The figure starts empty and populates as traffic is captured. You can control how many packets are processed in each batch with `--batch-size`.
