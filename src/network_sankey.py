@@ -638,18 +638,26 @@ def main():
         return 0
 
     df = pd.DataFrame()
-    fig = create_and_display_sankey_diagram(df, direction=direction, interface_label=capture_interface)
+    fig = create_and_display_sankey_diagram(
+        df,
+        direction=direction,
+        metric="frames",
+        interface_label=capture_interface,
+    )
 
     if use_dash:
         app = Dash(__name__)
         app.layout = html.Div(
             [
                 dcc.Graph(id="graph", figure=fig),
+                html.Div(id="counts-div"),
                 html.Button("Pause", id="pause-button", n_clicks=0),
                 html.Button("Clear", id="clear-button", n_clicks=0),
+                html.Button("Show Bytes", id="metric-toggle-button", n_clicks=0),
                 dcc.Interval(id="interval", interval=3000, n_intervals=0),
                 dcc.Store(id="paused", data=False),
-            ],
+                dcc.Store(id="metric", data="frames"),
+            ]
         )
 
         @app.callback(
@@ -665,12 +673,28 @@ def main():
             return ("Unpause" if paused else "Pause"), paused
 
         @app.callback(
+            Output("metric-toggle-button", "children"),
+            Output("metric", "data"),
+            Input("metric-toggle-button", "n_clicks"),
+            State("metric", "data"),
+        )
+        def toggle_metric(n_clicks, metric):
+            if n_clicks is None or n_clicks == 0:
+                label = "Show Bytes" if metric == "frames" else "Show Frames"
+                return label, metric
+            metric = "length" if metric == "frames" else "frames"
+            label = "Show Bytes" if metric == "frames" else "Show Frames"
+            return label, metric
+
+        @app.callback(
             Output("graph", "figure"),
+            Output("counts-div", "children"),
             Input("interval", "n_intervals"),
             Input("clear-button", "n_clicks"),
+            Input("metric", "data"),
             State("paused", "data"),
         )
-        def update_graph(n_intervals, clear_clicks, paused):
+        def update_graph(n_intervals, clear_clicks, metric, paused):
             nonlocal df
             triggered = dash.callback_context.triggered_id
             if triggered == "clear-button":
@@ -679,11 +703,19 @@ def main():
                     fig,
                     df,
                     direction=direction,
+                    metric=metric,
                     interface_label=capture_interface,
                 )
-                return fig
+                counts = "RX 0 {unit} | TX 0 {unit}".format(
+                    unit="bytes" if metric == "length" else "frames"
+                )
+                return fig, counts
             if paused:
-                return fig
+                total_in = int(df.query('direction == "receive"')[metric].sum())
+                total_out = int(df.query('direction == "transmit"')[metric].sum())
+                counts = f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | " \
+                    f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
+                return fig, counts
             packets = sniff(iface=capture_interface, count=batch_size, timeout=1)
             if packets:
                 new_df = construct_dataframe_from_capture(
@@ -691,8 +723,18 @@ def main():
                     mac_address_to_interface_mapping=mac_addresses_mapping_dict,
                 )
                 df = pd.concat([df, new_df], ignore_index=True)
-                update_sankey_figure(fig, df, direction=direction, interface_label=capture_interface)
-            return fig
+                update_sankey_figure(
+                    fig,
+                    df,
+                    direction=direction,
+                    metric=metric,
+                    interface_label=capture_interface,
+                )
+            total_in = int(df.query('direction == "receive"')[metric].sum())
+            total_out = int(df.query('direction == "transmit"')[metric].sum())
+            counts = f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | " \
+                f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
+            return fig, counts
 
         app.run(debug=False)
     else:
@@ -705,7 +747,16 @@ def main():
                 packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict,
             )
             df = pd.concat([df, new_df], ignore_index=True)
-            update_sankey_figure(fig, df, direction=direction, interface_label=capture_interface)
+            update_sankey_figure(
+                fig,
+                df,
+                direction=direction,
+                metric="frames",
+                interface_label=capture_interface,
+            )
+            total_in = int(df.query('direction == "receive"')["frames"].sum())
+            total_out = int(df.query('direction == "transmit"')["frames"].sum())
+            print(f"RX {total_in} frames | TX {total_out} frames")
 
     # try_sunburst(df, metric="frames")
     return 0
