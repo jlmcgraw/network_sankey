@@ -164,6 +164,10 @@ def compute_sankey_data(
     }
 
     values = dir_path[direction]
+
+    if df.empty or not set(values["path"]).issubset(df.columns):
+        return [], [], [], []
+
     path_pairs = list(pairwise(values["path"]))
     all_nodes = pd.concat([df[col] for col in values["path"]]).unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}

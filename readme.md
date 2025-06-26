@@ -19,5 +19,5 @@ Run the tool without a capture file to sniff packets continuously. The diagram w
 python network_sankey.py --interface en0 --dash
 ```
 
-You can control how many packets are processed in each batch with `--batch-size`.
+The figure starts empty and populates as traffic is captured. You can control how many packets are processed in each batch with `--batch-size`.
 
