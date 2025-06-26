@@ -32,11 +32,12 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 - Dump packets for whatever is being hovered over
 - Hovering over a node tracks its flow all the way back to the source and displays information about it
 - Tooltips cover the flows
-- Display a running count of packets/frames/bytes in/out
 - Provide a rolling window of the capture (eg last 30 seconds)
 - Display a diagram in native GUI without using browser
+- Sort nodes
 
 ## Done
 - Consistent node colors between updates
 - Unified diagram ( in -> interface -> out)
 - Capture pause/resume and clear buttons
+- Display a running count of packets/frames/bytes in/out
