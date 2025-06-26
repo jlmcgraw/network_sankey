@@ -384,6 +384,23 @@ def create_and_display_sankey_diagram(
     )
 
 
+def compute_counts(df: pd.DataFrame, metric: str) -> tuple[int, int]:
+    """Return total inbound and outbound traffic counts.
+
+    Parameters
+    ----------
+    df:
+        DataFrame holding captured packets.
+    metric:
+        Metric column to aggregate. Typically ``"frames"`` or ``"length"``.
+    """
+    if df.empty or "direction" not in df or metric not in df:
+        return 0, 0
+    total_in = int(df[df["direction"] == "receive"][metric].sum())
+    total_out = int(df[df["direction"] == "transmit"][metric].sum())
+    return total_in, total_out
+
+
 # def try_sunburst(df, metric=None):
 #     paths = ["destination_mac", "source_mac"]
 #
@@ -777,10 +794,11 @@ def main():
                 )
                 return fig, counts
             if paused:
-                total_in = int(df.query('direction == "receive"')[metric].sum())
-                total_out = int(df.query('direction == "transmit"')[metric].sum())
-                counts = f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | " \
+                total_in, total_out = compute_counts(df, metric)
+                counts = (
+                    f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | "
                     f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
+                )
                 return fig, counts
             packets = sniff(iface=capture_interface, count=batch_size, timeout=1)
             if packets:
@@ -797,10 +815,11 @@ def main():
                     interface_label=capture_interface,
                     sort_nodes=sort_nodes,
                 )
-            total_in = int(df.query('direction == "receive"')[metric].sum())
-            total_out = int(df.query('direction == "transmit"')[metric].sum())
-            counts = f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | " \
+            total_in, total_out = compute_counts(df, metric)
+            counts = (
+                f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | "
                 f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
+            )
             return fig, counts
 
         app.run(debug=False)
@@ -822,8 +841,7 @@ def main():
                 interface_label=capture_interface,
                 sort_nodes=sort_nodes,
             )
-            total_in = int(df.query('direction == "receive"')["frames"].sum())
-            total_out = int(df.query('direction == "transmit"')["frames"].sum())
+            total_in, total_out = compute_counts(df, "frames")
             print(f"RX {total_in} frames | TX {total_out} frames")
 
     # try_sunburst(df, metric="frames")
