@@ -20,6 +20,7 @@ python network_sankey.py --interface en0 --dash --direction both
 ```
 
 The figure starts empty and populates as traffic is captured. You can control how many packets are processed in each batch with `--batch-size`.
+Use the **Pause** button to temporarily stop capturing traffic and **Clear** to reset the diagram.
 
 ## Todo
 - Remove the TX/RX labels but still differentiate between RX/TX
@@ -29,10 +30,10 @@ The figure starts empty and populates as traffic is captured. You can control ho
 - Hovering over a node tracks its flow all the way back to the source and displays information about it
 - Tooltips cover the flows
 - Display a running count of packets/frames/bytes in/out
-- Provide capture start/stop/clear buttons
 - Provide a rolling window of the capture (eg last 30 seconds)
 - Display a diagram in native GUI without using browser
 
 ## Done
 - Consistent node colors between updates
 - Unified diagram ( in -> interface -> out)
+- Capture pause/resume and clear buttons
