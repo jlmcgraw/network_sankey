@@ -170,7 +170,11 @@ def compute_sankey_data(
             return [], [], [], [], None
 
         path_pairs = list(pairwise(values["path"]))
-        all_nodes = pd.concat([df[col] for col in values["path"]]).unique()
+        all_nodes = (
+            pd.concat([df[col] for col in values["path"]])
+            .dropna()
+            .unique()
+        )
         node_indices = {node: idx for idx, node in enumerate(all_nodes)}
 
         combined_df = pd.DataFrame()
@@ -181,6 +185,7 @@ def compute_sankey_data(
                 .sum()
                 .reset_index()
             )
+            agg_data = agg_data.dropna(subset=[source, target])
             agg_data["SourceID"] = agg_data[source].apply(
                 lambda x: node_indices[x] if pd.notnull(x) else x
             )
@@ -235,6 +240,7 @@ def compute_sankey_data(
                 .sum()
                 .reset_index()
             )
+            agg = agg.dropna(subset=[source, target])
             agg["Source"] = agg[source]
             agg["Target"] = agg[target]
             agg["Value"] = agg[metric]
@@ -246,20 +252,37 @@ def compute_sankey_data(
         ignore_index=True,
     )
 
-    all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).unique()
+    all_nodes = (
+        pd.concat([combined_df["Source"], combined_df["Target"]])
+        .dropna()
+        .unique()
+    )
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
     sources = combined_df["Source"].map(node_indices).tolist()
     targets = combined_df["Target"].map(node_indices).tolist()
     values_list = combined_df["Value"].tolist()
 
-    inbound_nodes = pd.concat([inbound_df[col] for col in inbound_path]).unique().tolist()
-    outbound_nodes = pd.concat([outbound_df[col] for col in outbound_path]).unique().tolist()
+    inbound_nodes = (
+        pd.concat([inbound_df[col] for col in inbound_path])
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    outbound_nodes = (
+        pd.concat([outbound_df[col] for col in outbound_path])
+        .dropna()
+        .unique()
+        .tolist()
+    )
     node_x = [0.0] * len(all_nodes)
     for node in outbound_nodes:
-        node_x[node_indices[node]] = 1.0
+        if node in node_indices:
+            node_x[node_indices[node]] = 1.0
     for node in inbound_nodes:
-        node_x[node_indices[node]] = 0.0
-    node_x[node_indices[interface_label]] = 0.5
+        if node in node_indices:
+            node_x[node_indices[node]] = 0.0
+    if interface_label in node_indices:
+        node_x[node_indices[interface_label]] = 0.5
 
     return list(all_nodes), sources, targets, values_list, node_x
 
