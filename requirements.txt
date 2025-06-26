@@ -4,3 +4,4 @@ pyshark
 ruff
 scapy
 dash
+ipywidgets
