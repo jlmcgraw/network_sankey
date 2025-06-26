@@ -1,6 +1,0 @@
-pandas
-plotly
-pyshark
-ruff
-scapy
-tqdm
