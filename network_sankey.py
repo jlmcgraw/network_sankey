@@ -227,7 +227,8 @@ def update_sankey_figure(
 
     labels, sources, targets, values_list = compute_sankey_data(df, direction, metric)
     fig.data[0].node.update(label=labels)
-    fig.data[0].update(source=sources, target=targets, value=values_list)
+    # update link arrays via the nested link object
+    fig.data[0].link.update(source=sources, target=targets, value=values_list)
 
 
 def create_and_display_sankey_diagram(
