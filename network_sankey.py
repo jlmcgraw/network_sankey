@@ -577,7 +577,7 @@ def main():
                 update_sankey_figure(fig, df)
             return fig
 
-        app.run_server(debug=False)
+        app.run(debug=False)
     else:
         fig.show()
         while True:
