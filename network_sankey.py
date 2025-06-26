@@ -22,17 +22,26 @@ from itertools import pairwise
 import pandas as pd
 import plotly.graph_objects as go
 import scapy.packet
-import scapy.packet
 from dash import Dash, html, dcc, Output, Input
 from plotly.graph_objects import FigureWidget
-from scapy.all import get_if_addr
-from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff
-from scapy.all import rdpcap
+from scapy.all import get_if_addr, get_if_list, get_if_hwaddr, sniff, rdpcap
+import hashlib
 
 from models import MacAddressInterfaceDict, Direction, Scope, IpAddressInterfaceDict, ethernet_type_to_protocol_lookup
 
 # Do this to suppress warnings when loading scapy module
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+
+# Maintain a stable mapping from node label to color
+NODE_COLOR_MAP: dict[str, str] = {}
+
+
+def get_color_for_label(label: str) -> str:
+    """Return a consistent hex color for the given label."""
+    if label not in NODE_COLOR_MAP:
+        digest = hashlib.sha256(label.encode()).hexdigest()[:6]
+        NODE_COLOR_MAP[label] = f"#{digest}"
+    return NODE_COLOR_MAP[label]
 
 
 def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
@@ -272,6 +281,7 @@ def create_sankey_figure(
                     thickness=20,
                     line=dict(color="black", width=0.5),
                     label=labels,
+                    color=[get_color_for_label(label) for label in labels],
                     **({"x": node_x} if node_x is not None else {}),
                 ),
                 link=dict(source=sources, target=targets, value=values_list),
@@ -292,7 +302,10 @@ def update_sankey_figure(
     """Update the given Sankey figure widget using data from ``df``."""
 
     labels, sources, targets, values_list, node_x = compute_sankey_data(df, direction, metric, interface_label)
-    fig.data[0].node.update(label=labels)
+    fig.data[0].node.update(
+        label=labels,
+        color=[get_color_for_label(label) for label in labels],
+    )
     if node_x is not None:
         fig.data[0].node.update(x=node_x)
     # update link arrays via the nested link object
