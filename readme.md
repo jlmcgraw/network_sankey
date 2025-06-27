@@ -41,3 +41,12 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 - Unified diagram ( in -> interface -> out)
 - Capture pause/resume and clear buttons
 - Display a running count of packets/frames/bytes in/out
+### D3.js Interface
+
+You can visualize traffic using a basic D3.js Sankey diagram. Start the server and open the web interface:
+
+```bash
+python src/network_sankey_d3.py --interface en0
+```
+
+The page is served at `http://localhost:8000/index.html` and refreshes automatically.

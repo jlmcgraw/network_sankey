@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Network Sankey - D3.js</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12/dist/d3-sankey.min.js"></script>
+    <style>
+        body { font-family: sans-serif; }
+        svg { width: 820px; height: 410px; }
+    </style>
+</head>
+<body>
+    <svg id="sankey"></svg>
+    <script>
+        function render() {
+            d3.json('data.json').then(function(data) {
+                const sankey = d3.sankey()
+                    .nodeWidth(15)
+                    .nodePadding(10)
+                    .extent([[1, 1], [800, 400]]);
+                const graph = sankey({ nodes: data.nodes.map(d => Object.assign({}, d)), links: data.links.map(d => Object.assign({}, d)) });
+                const svg = d3.select('#sankey');
+                svg.selectAll('*').remove();
+                svg.append('g')
+                    .selectAll('rect')
+                    .data(graph.nodes)
+                    .join('rect')
+                    .attr('x', d => d.x0)
+                    .attr('y', d => d.y0)
+                    .attr('width', d => d.x1 - d.x0)
+                    .attr('height', d => d.y1 - d.y0)
+                    .attr('fill', '#555')
+                    .append('title')
+                    .text(d => `${d.name}\n${d.value}`);
+                svg.append('g')
+                    .attr('fill', 'none')
+                    .selectAll('path')
+                    .data(graph.links)
+                    .join('path')
+                    .attr('d', d3.sankeyLinkHorizontal())
+                    .attr('stroke', '#888')
+                    .attr('stroke-width', d => Math.max(1, d.width))
+                    .attr('stroke-opacity', 0.5)
+                    .append('title')
+                    .text(d => `${d.source.name} → ${d.target.name}\n${d.value}`);
+                svg.append('g')
+                    .style('font', '10px sans-serif')
+                    .selectAll('text')
+                    .data(graph.nodes)
+                    .join('text')
+                    .attr('x', d => d.x0 < 400 ? d.x1 + 6 : d.x0 - 6)
+                    .attr('y', d => (d.y1 + d.y0) / 2)
+                    .attr('dy', '0.35em')
+                    .attr('text-anchor', d => d.x0 < 400 ? 'start' : 'end')
+                    .text(d => d.name);
+            });
+        }
+        render();
+        setInterval(render, 3000);
+    </script>
+</body>
+</html>
