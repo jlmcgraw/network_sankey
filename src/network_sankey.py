@@ -107,66 +107,109 @@ def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
     return ip_to_interface_dict
 
 
-def compute_sankey_data(
-    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface",
-) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
-    """Return labels, links and optional x positions for a Sankey diagram."""
-    dir_path = {
-        "receive": {
-            "path": [
-                "l4_source",
-                "l3_type",
-                "l3_source",
-                "type",
-                "source_mac",
-                "destination_mac",
-            ],
-            "alignment": "right",
-        },
-        "transmit": {
-            "path": [
-                "source_mac",
-                "destination_mac",
-                "type",
-                "l3_destination",
-                "l3_type",
-                "l4_destination",
-            ],
-            "alignment": "left",
-        },
-    }
+DIRECTION_PATHS: dict[str, list[str]] = {
+    "receive": [
+        "l4_source",
+        "l3_type",
+        "l3_source",
+        "type",
+        "source_mac",
+        "destination_mac",
+    ],
+    "transmit": [
+        "source_mac",
+        "destination_mac",
+        "type",
+        "l3_destination",
+        "l3_type",
+        "l4_destination",
+    ],
+}
 
-    if direction in ("receive", "transmit"):
-        values = dir_path[direction]
+INBOUND_PATH = [
+    "l4_source",
+    "l3_type",
+    "l3_source",
+    "type",
+    "source_mac",
+    "interface_label",
+]
 
-        if df.empty or not set(values["path"]).issubset(df.columns):
-            return [], [], [], [], None
+OUTBOUND_PATH = [
+    "interface_label",
+    "destination_mac",
+    "type",
+    "l3_destination",
+    "l3_type",
+    "l4_destination",
+]
 
-        path_pairs = list(pairwise(values["path"]))
-        all_nodes = pd.concat([df[col] for col in values["path"]]).dropna().unique()
-        node_indices = {node: idx for idx, node in enumerate(all_nodes)}
+INBOUND_COLUMN_X = {
+    "l4_source": 0.0,
+    "l3_type": 0.2,
+    "l3_source": 0.2,
+    "type": 0.4,
+    "source_mac": 0.4,
+    "interface_label": 0.5,
+}
 
-        combined_df = pd.DataFrame()
-        for source, target in path_pairs:
-            agg_data = (
-                df.query(f'direction == "{direction}"')
-                .groupby([source, target], dropna=False)[metric]
-                .sum()
-                .reset_index()
-            )
-            agg_data = agg_data.dropna(subset=[source, target])
-            agg_data["SourceID"] = agg_data[source].apply(lambda x: node_indices[x] if pd.notnull(x) else x)
-            agg_data["TargetID"] = agg_data[target].apply(lambda x: node_indices[x] if pd.notnull(x) else x)
-            agg_data["Value"] = agg_data[metric]
-            combined_df = pd.concat([combined_df, agg_data])
+OUTBOUND_COLUMN_X = {
+    "interface_label": 0.5,
+    "destination_mac": 0.6,
+    "type": 0.6,
+    "l3_destination": 0.8,
+    "l3_type": 0.8,
+    "l4_destination": 1.0,
+}
 
-        sources = combined_df["SourceID"].tolist()
-        targets = combined_df["TargetID"].tolist()
-        values_list = combined_df["Value"].tolist()
 
-        return list(all_nodes), sources, targets, values_list, None
+def prefix_columns(df: pd.DataFrame, columns: list[str], prefix: str) -> None:
+    """Apply ``prefix`` to ``columns`` in ``df`` if present."""
+    for column in columns:
+        if column in df:
+            df[column] = df[column].apply(lambda x: f"{prefix}{x}" if pd.notnull(x) else x)
 
-    # combined receive and transmit view with interface in the middle
+
+def _aggregate_links(df: pd.DataFrame, path: list[str], metric: str) -> pd.DataFrame:
+    """Aggregate ``metric`` for each consecutive pair of columns in ``path``."""
+    links = pd.DataFrame()
+    for source, target in pairwise(path):
+        agg = (
+            df.groupby([source, target], dropna=False)[metric]
+            .sum()
+            .reset_index()
+        )
+        agg = agg.dropna(subset=[source, target])
+        agg["Source"] = agg[source]
+        agg["Target"] = agg[target]
+        agg["Value"] = agg[metric]
+        links = pd.concat([links, agg])
+    return links
+
+
+def _compute_directional_sankey_data(
+    df: pd.DataFrame, direction: str, metric: str
+) -> tuple[list[str], list[int], list[int], list[int], None]:
+    path = DIRECTION_PATHS[direction]
+
+    if df.empty or not set(path).issubset(df.columns):
+        return [], [], [], [], None
+
+    filtered = df.query(f'direction == "{direction}"')
+    combined_df = _aggregate_links(filtered, path, metric)
+
+    all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
+    node_indices = {node: idx for idx, node in enumerate(all_nodes)}
+    sources = combined_df["Source"].map(node_indices).tolist()
+    targets = combined_df["Target"].map(node_indices).tolist()
+    values_list = combined_df["Value"].tolist()
+
+    return list(all_nodes), sources, targets, values_list, None
+
+
+def _compute_combined_sankey_data(
+    df: pd.DataFrame, metric: str, interface_label: str
+) -> tuple[list[str], list[int], list[int], list[int], list[float]]:
     if df.empty:
         return [], [], [], [], None
 
@@ -176,69 +219,17 @@ def compute_sankey_data(
     inbound_df = df.query('direction == "receive"').copy()
     outbound_df = df.query('direction == "transmit"').copy()
 
-    def prefix_columns(dir_df: pd.DataFrame, cols: list[str], prefix: str) -> None:
-        for col in cols:
-            if col in dir_df:
-                dir_df[col] = dir_df[col].apply(lambda x: f"{prefix}{x}" if pd.notnull(x) else x)
+    prefix_columns(inbound_df, INBOUND_PATH[:-1], "RX ")
+    prefix_columns(outbound_df, OUTBOUND_PATH[1:], "TX ")
 
-    prefix_columns(
-        inbound_df,
-        [
-            "l4_source",
-            "l3_type",
-            "l3_source",
-            "type",
-            "source_mac",
-        ],
-        "RX ",
-    )
-
-    prefix_columns(
-        outbound_df,
-        [
-            "destination_mac",
-            "type",
-            "l3_destination",
-            "l3_type",
-            "l4_destination",
-        ],
-        "TX ",
-    )
-
-    inbound_path = [
-        "l4_source",
-        "l3_type",
-        "l3_source",
-        "type",
-        "source_mac",
-        "interface_label",
-    ]
-    outbound_path = [
-        "interface_label",
-        "destination_mac",
-        "type",
-        "l3_destination",
-        "l3_type",
-        "l4_destination",
-    ]
-
-    if not set(inbound_path + outbound_path).issubset(df.columns):
+    if not set(INBOUND_PATH + OUTBOUND_PATH).issubset(df.columns):
         return [], [], [], [], None
 
-    def accumulate(dir_df: pd.DataFrame, path: list[str]) -> pd.DataFrame:
-        path_pairs = list(pairwise(path))
-        combined = pd.DataFrame()
-        for source, target in path_pairs:
-            agg = dir_df.groupby([source, target], dropna=False)[metric].sum().reset_index()
-            agg = agg.dropna(subset=[source, target])
-            agg["Source"] = agg[source]
-            agg["Target"] = agg[target]
-            agg["Value"] = agg[metric]
-            combined = pd.concat([combined, agg])
-        return combined
-
     combined_df = pd.concat(
-        [accumulate(inbound_df, inbound_path), accumulate(outbound_df, outbound_path)],
+        [
+            _aggregate_links(inbound_df, INBOUND_PATH, metric),
+            _aggregate_links(outbound_df, OUTBOUND_PATH, metric),
+        ],
         ignore_index=True,
     )
 
@@ -248,29 +239,12 @@ def compute_sankey_data(
     targets = combined_df["Target"].map(node_indices).tolist()
     values_list = combined_df["Value"].tolist()
 
-    inbound_column_x = {
-        "l4_source": 0.0,
-        "l3_type": 0.2,
-        "l3_source": 0.2,
-        "type": 0.4,
-        "source_mac": 0.4,
-        "interface_label": 0.5,
-    }
-    outbound_column_x = {
-        "interface_label": 0.5,
-        "destination_mac": 0.6,
-        "type": 0.6,
-        "l3_destination": 0.8,
-        "l3_type": 0.8,
-        "l4_destination": 1.0,
-    }
-
     node_x_map: dict[str, float] = {}
-    for col, x in inbound_column_x.items():
+    for col, x in INBOUND_COLUMN_X.items():
         if col in inbound_df:
             for val in inbound_df[col].dropna().unique():
                 node_x_map[val] = x
-    for col, x in outbound_column_x.items():
+    for col, x in OUTBOUND_COLUMN_X.items():
         if col in outbound_df:
             for val in outbound_df[col].dropna().unique():
                 node_x_map[val] = x
@@ -279,6 +253,15 @@ def compute_sankey_data(
 
     return list(all_nodes), sources, targets, values_list, node_x
 
+
+def compute_sankey_data(
+    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface",
+) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
+    """Return labels, links and optional x positions for a Sankey diagram."""
+    if direction in ("receive", "transmit"):
+        return _compute_directional_sankey_data(df, direction, metric)
+
+    return _compute_combined_sankey_data(df, metric, interface_label)
 
 def create_sankey_figure(
     df: pd.DataFrame, direction: str = "transmit", metric: str = "frames", interface_label: str = "interface",
