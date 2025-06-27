@@ -114,8 +114,15 @@ def compute_sankey_data(
     interface_label: str = "interface",
     *,
     sort_nodes: bool = False,
-) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
-    """Return labels, links and optional x positions for a Sankey diagram.
+) -> tuple[
+    list[str],
+    list[int],
+    list[int],
+    list[int],
+    list[float] | None,
+    list[float] | None,
+]:
+    """Return labels, links and optional node positions for a Sankey diagram.
 
     Parameters
     ----------
@@ -129,6 +136,12 @@ def compute_sankey_data(
         Label used for the interface node when ``direction`` is ``"both"``.
     sort_nodes:
         If ``True``, nodes are sorted alphabetically before being displayed.
+
+    Returns
+    -------
+    labels, sources, targets, values, node_x, node_y
+        ``node_x`` and ``node_y`` contain coordinates for the nodes or ``None``
+        if the positions are not specified.
     """
     dir_path = {
         "receive": {
@@ -159,21 +172,26 @@ def compute_sankey_data(
         values = dir_path[direction]
 
         if df.empty or not set(values["path"]).issubset(df.columns):
-            return [], [], [], [], None
+            return [], [], [], [], None, None
 
         path_pairs = list(pairwise(values["path"]))
-        all_nodes: list[str] = []
-        node_indices: dict[str, int] = {}
+        column_nodes: dict[str, list[str]] = {}
         for col in values["path"]:
             if col not in df:
                 continue
             nodes = df[col].dropna().unique()
-            if sort_nodes:
-                nodes = sorted(nodes)
-            for node in nodes:
+            column_nodes[col] = sorted(nodes) if sort_nodes else list(nodes)
+
+        all_nodes: list[str] = []
+        node_indices: dict[str, int] = {}
+        node_y_map: dict[str, float] = {}
+        for col, nodes in column_nodes.items():
+            step = 1.0 / (len(nodes) + 1)
+            for idx, node in enumerate(nodes):
                 if node not in node_indices:
                     node_indices[node] = len(all_nodes)
                     all_nodes.append(node)
+                node_y_map[node] = step * (idx + 1)
 
         combined_df = pd.DataFrame()
         for source, target in path_pairs:
@@ -193,11 +211,13 @@ def compute_sankey_data(
         targets = combined_df["TargetID"].tolist()
         values_list = combined_df["Value"].tolist()
 
-        return list(all_nodes), sources, targets, values_list, None
+        node_y = [node_y_map.get(node, 0.0) for node in all_nodes]
+
+        return list(all_nodes), sources, targets, values_list, None, node_y
 
     # combined receive and transmit view with interface in the middle
     if df.empty:
-        return [], [], [], [], None
+        return [], [], [], [], None, None
 
     df = df.copy()
     df["interface_label"] = interface_label
@@ -252,7 +272,7 @@ def compute_sankey_data(
     ]
 
     if not set(inbound_path + outbound_path).issubset(df.columns):
-        return [], [], [], [], None
+        return [], [], [], [], None, None
 
     def accumulate(dir_df: pd.DataFrame, path: list[str]) -> pd.DataFrame:
         path_pairs = list(pairwise(path))
@@ -271,26 +291,26 @@ def compute_sankey_data(
         ignore_index=True,
     )
 
-    all_nodes: list[str] = []
-    node_indices: dict[str, int] = {}
+    column_nodes: list[tuple[str, list[str]]] = []
     for col in inbound_path:
         if col in inbound_df:
             nodes = inbound_df[col].dropna().unique()
-            if sort_nodes:
-                nodes = sorted(nodes)
-            for node in nodes:
-                if node not in node_indices:
-                    node_indices[node] = len(all_nodes)
-                    all_nodes.append(node)
+            column_nodes.append((col, sorted(nodes) if sort_nodes else list(nodes)))
     for col in outbound_path:
         if col in outbound_df:
             nodes = outbound_df[col].dropna().unique()
-            if sort_nodes:
-                nodes = sorted(nodes)
-            for node in nodes:
-                if node not in node_indices:
-                    node_indices[node] = len(all_nodes)
-                    all_nodes.append(node)
+            column_nodes.append((col, sorted(nodes) if sort_nodes else list(nodes)))
+
+    all_nodes: list[str] = []
+    node_indices: dict[str, int] = {}
+    node_y_map: dict[str, float] = {}
+    for _col, nodes in column_nodes:
+        step = 1.0 / (len(nodes) + 1)
+        for idx, node in enumerate(nodes):
+            if node not in node_indices:
+                node_indices[node] = len(all_nodes)
+                all_nodes.append(node)
+            node_y_map[node] = step * (idx + 1)
 
     sources = combined_df["Source"].map(node_indices).tolist()
     targets = combined_df["Target"].map(node_indices).tolist()
@@ -324,8 +344,9 @@ def compute_sankey_data(
                 node_x_map[val] = x
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
+    node_y = [node_y_map.get(node, 0.0) for node in all_nodes]
 
-    return list(all_nodes), sources, targets, values_list, node_x
+    return list(all_nodes), sources, targets, values_list, node_x, node_y
 
 
 def create_sankey_figure(
@@ -337,7 +358,7 @@ def create_sankey_figure(
     sort_nodes: bool = False,
 ) -> FigureWidget:
     """Create a Sankey figure widget from dataframe."""
-    labels, sources, targets, values_list, node_x = compute_sankey_data(
+    labels, sources, targets, values_list, node_x, node_y = compute_sankey_data(
         df,
         direction,
         metric,
@@ -355,6 +376,7 @@ def create_sankey_figure(
                     label=labels,
                     color=[get_color_for_label(label) for label in labels],
                     **({"x": node_x} if node_x is not None else {}),
+                    **({"y": node_y} if node_y is not None else {}),
                 ),
                 link=dict(source=sources, target=targets, value=values_list),
             ),
@@ -374,7 +396,7 @@ def update_sankey_figure(
     sort_nodes: bool = False,
 ) -> None:
     """Update the given Sankey figure widget using data from ``df``."""
-    labels, sources, targets, values_list, node_x = compute_sankey_data(
+    labels, sources, targets, values_list, node_x, node_y = compute_sankey_data(
         df,
         direction,
         metric,
@@ -387,6 +409,8 @@ def update_sankey_figure(
     )
     if node_x is not None:
         fig.data[0].node.update(x=node_x)
+    if node_y is not None:
+        fig.data[0].node.update(y=node_y)
     # update link arrays via the nested link object
     fig.data[0].link.update(source=sources, target=targets, value=values_list)
 
