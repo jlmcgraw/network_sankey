@@ -162,10 +162,18 @@ def compute_sankey_data(
             return [], [], [], [], None
 
         path_pairs = list(pairwise(values["path"]))
-        all_nodes = pd.concat([df[col] for col in values["path"]]).dropna().unique()
-        if sort_nodes:
-            all_nodes = sorted(all_nodes)
-        node_indices = {node: idx for idx, node in enumerate(all_nodes)}
+        all_nodes: list[str] = []
+        node_indices: dict[str, int] = {}
+        for col in values["path"]:
+            if col not in df:
+                continue
+            nodes = df[col].dropna().unique()
+            if sort_nodes:
+                nodes = sorted(nodes)
+            for node in nodes:
+                if node not in node_indices:
+                    node_indices[node] = len(all_nodes)
+                    all_nodes.append(node)
 
         combined_df = pd.DataFrame()
         for source, target in path_pairs:
@@ -263,10 +271,27 @@ def compute_sankey_data(
         ignore_index=True,
     )
 
-    all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
-    if sort_nodes:
-        all_nodes = sorted(all_nodes)
-    node_indices = {node: idx for idx, node in enumerate(all_nodes)}
+    all_nodes: list[str] = []
+    node_indices: dict[str, int] = {}
+    for col in inbound_path:
+        if col in inbound_df:
+            nodes = inbound_df[col].dropna().unique()
+            if sort_nodes:
+                nodes = sorted(nodes)
+            for node in nodes:
+                if node not in node_indices:
+                    node_indices[node] = len(all_nodes)
+                    all_nodes.append(node)
+    for col in outbound_path:
+        if col in outbound_df:
+            nodes = outbound_df[col].dropna().unique()
+            if sort_nodes:
+                nodes = sorted(nodes)
+            for node in nodes:
+                if node not in node_indices:
+                    node_indices[node] = len(all_nodes)
+                    all_nodes.append(node)
+
     sources = combined_df["Source"].map(node_indices).tolist()
     targets = combined_df["Target"].map(node_indices).tolist()
     values_list = combined_df["Value"].tolist()
