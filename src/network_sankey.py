@@ -37,8 +37,16 @@ logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 NODE_COLOR_MAP: dict[str, str] = {}
 
 
-def get_color_for_label(label: str) -> str:
+def _safe_direction_sum(df: pd.DataFrame, direction: str, metric: str) -> int:
+    """Return the sum for ``metric`` filtering by ``direction`` if columns exist."""
+    if "direction" not in df or metric not in df:
+        return 0
+    return int(df.loc[df["direction"] == direction, metric].sum())
+
+
+def get_color_for_label(label: str | int) -> str:
     """Return a consistent hex color for the given label."""
+    label = str(label)
     if label not in NODE_COLOR_MAP:
         digest = hashlib.sha256(label.encode()).hexdigest()[:6]
         NODE_COLOR_MAP[label] = f"#{digest}"
@@ -194,6 +202,9 @@ def _compute_directional_sankey_data(
     filtered = df.query(f'direction == "{direction}"')
     combined_df = _aggregate_links(filtered, path, metric)
 
+    combined_df["Source"] = combined_df["Source"].astype(str)
+    combined_df["Target"] = combined_df["Target"].astype(str)
+
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
     sources = combined_df["Source"].map(node_indices).tolist()
@@ -229,6 +240,9 @@ def _compute_combined_sankey_data(
         ignore_index=True,
     )
 
+    combined_df["Source"] = combined_df["Source"].astype(str)
+    combined_df["Target"] = combined_df["Target"].astype(str)
+
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
     sources = combined_df["Source"].map(node_indices).tolist()
@@ -239,11 +253,11 @@ def _compute_combined_sankey_data(
     for col, x in INBOUND_COLUMN_X.items():
         if col in inbound_df:
             for val in inbound_df[col].dropna().unique():
-                node_x_map[val] = x
+                node_x_map[str(val)] = x
     for col, x in OUTBOUND_COLUMN_X.items():
         if col in outbound_df:
             for val in outbound_df[col].dropna().unique():
-                node_x_map[val] = x
+                node_x_map[str(val)] = x
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
@@ -531,8 +545,8 @@ def main():
                 counts = "RX 0 {unit} | TX 0 {unit}".format(unit="bytes" if metric == "length" else "frames")
                 return fig, counts
             if paused:
-                total_in = int(df.query('direction == "receive"')[metric].sum())
-                total_out = int(df.query('direction == "transmit"')[metric].sum())
+                total_in = _safe_direction_sum(df, "receive", metric)
+                total_out = _safe_direction_sum(df, "transmit", metric)
                 counts = (
                     f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | "
                     f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
@@ -552,8 +566,8 @@ def main():
                     metric=metric,
                     interface_label=capture_interface,
                 )
-            total_in = int(df.query('direction == "receive"')[metric].sum())
-            total_out = int(df.query('direction == "transmit"')[metric].sum())
+            total_in = _safe_direction_sum(df, "receive", metric)
+            total_out = _safe_direction_sum(df, "transmit", metric)
             counts = (
                 f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | "
                 f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
@@ -579,8 +593,8 @@ def main():
                 metric="frames",
                 interface_label=capture_interface,
             )
-            total_in = int(df.query('direction == "receive"')["frames"].sum())
-            total_out = int(df.query('direction == "transmit"')["frames"].sum())
+            total_in = _safe_direction_sum(df, "receive", "frames")
+            total_out = _safe_direction_sum(df, "transmit", "frames")
             print(f"RX {total_in} frames | TX {total_out} frames")
 
     return 0
