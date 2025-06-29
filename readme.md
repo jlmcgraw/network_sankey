@@ -53,6 +53,7 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 - Capture pause/resume and clear buttons
 - Display a running count of packets/frames/bytes in/out
 - Correct L2 protocol placement in the diagram
+  - Node positions are now fixed so L2 entries don't shift columns
 ### D3.js Interface
 
 You can visualize traffic using a basic D3.js Sankey diagram. Start the server and open the web interface:

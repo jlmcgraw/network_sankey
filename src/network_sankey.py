@@ -317,6 +317,7 @@ def create_sankey_figure(
     fig = FigureWidget(
         data=[
             go.Sankey(
+                arrangement="fixed",
                 node=dict(
                     pad=15,
                     thickness=20,
@@ -348,6 +349,7 @@ def update_sankey_figure(
     )
     if node_x is not None:
         fig.data[0].node.update(x=node_x)
+    fig.data[0].arrangement = "fixed"
     # update link arrays via the nested link object
     fig.data[0].link.update(source=sources, target=targets, value=values_list)
 
