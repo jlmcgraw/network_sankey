@@ -38,7 +38,6 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 
 ## Todo
 - Fix how ports are displayed as floats
-- Force L2 protocols (eg ARP) to appear in the right column
 - Remove the TX/RX labels but still differentiate between RX/TX
 - A toggle for name resolution, or name resolution in the tooltip
 - Dump packets for whatever is being hovered over
@@ -53,6 +52,7 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 - Unified diagram ( in -> interface -> out)
 - Capture pause/resume and clear buttons
 - Display a running count of packets/frames/bytes in/out
+- Correct L2 protocol placement in the diagram
 ### D3.js Interface
 
 You can visualize traffic using a basic D3.js Sankey diagram. Start the server and open the web interface:
