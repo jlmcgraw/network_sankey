@@ -209,7 +209,7 @@ def _aggregate_links(df: pd.DataFrame, path: list[str], metric: str) -> pd.DataF
     links = pd.DataFrame()
     for source, target in pairwise(path):
         agg = df.groupby([source, target], dropna=False)[metric].sum().reset_index()
-        agg = agg.dropna(subset=[source, target])
+        agg = agg[~(agg[source].isna() & agg[target].isna())]
         agg["Source"] = agg[source]
         agg["Target"] = agg[target]
         agg["Value"] = agg[metric]
@@ -228,8 +228,8 @@ def _compute_directional_sankey_data(
     filtered = df.query(f'direction == "{direction}"')
     combined_df = _aggregate_links(filtered, path, metric)
 
-    combined_df["Source"] = combined_df["Source"].astype(str)
-    combined_df["Target"] = combined_df["Target"].astype(str)
+    combined_df["Source"] = combined_df["Source"].fillna("N/A").astype(str)
+    combined_df["Target"] = combined_df["Target"].fillna("N/A").astype(str)
 
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
@@ -276,8 +276,8 @@ def _compute_combined_sankey_data(
         ignore_index=True,
     )
 
-    combined_df["Source"] = combined_df["Source"].astype(str)
-    combined_df["Target"] = combined_df["Target"].astype(str)
+    combined_df["Source"] = combined_df["Source"].fillna("N/A").astype(str)
+    combined_df["Target"] = combined_df["Target"].fillna("N/A").astype(str)
 
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
@@ -488,6 +488,12 @@ def construct_dataframe_from_capture(
                 # print(f"{l3_type=}")
             except AttributeError:
                 pass
+        elif packet.haslayer("ARP"):
+            l3_type = "ARP"
+            l3_source = packet["ARP"].psrc
+            l3_source_scope = get_ip_scope(l3_source)
+            l3_destination = packet["ARP"].pdst
+            l3_destination_scope = get_ip_scope(l3_destination)
 
         # Layer 4
         if packet.haslayer("UDP"):
