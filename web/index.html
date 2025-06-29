@@ -19,7 +19,21 @@
                     .nodeWidth(15)
                     .nodePadding(10)
                     .extent([[1, 1], [800, 400]]);
-                const graph = sankey({ nodes: data.nodes.map(d => Object.assign({}, d)), links: data.links.map(d => Object.assign({}, d)) });
+                const graph = sankey({
+                    nodes: data.nodes.map(d => Object.assign({}, d)),
+                    links: data.links.map(d => Object.assign({}, d))
+                });
+                if (data.nodes.length && 'x' in data.nodes[0]) {
+                    graph.nodes.forEach((node, i) => {
+                        const x = data.nodes[i].x;
+                        if (typeof x === 'number') {
+                            const w = node.x1 - node.x0;
+                            node.x0 = 1 + x * 800;
+                            node.x1 = node.x0 + w;
+                        }
+                    });
+                    sankey.update(graph);
+                }
                 const svg = d3.select('#sankey');
                 svg.selectAll('*').remove();
                 svg.append('g')

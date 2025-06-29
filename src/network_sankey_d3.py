@@ -23,10 +23,20 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 DATA_FILE = WEB_DIR / "data.json"
 
 
-def create_sankey_json(df: pd.DataFrame, direction: str, metric: str, interface_label: str) -> dict:
-    labels, sources, targets, values_list, _ = compute_sankey_data(df, direction, metric, interface_label)
-    nodes = [{"name": label} for label in labels]
-    links = [{"source": s, "target": t, "value": v} for s, t, v in zip(sources, targets, values_list)]
+def create_sankey_json(
+    df: pd.DataFrame, direction: str, metric: str, interface_label: str
+) -> dict:
+    labels, sources, targets, values_list, node_x = compute_sankey_data(
+        df, direction, metric, interface_label
+    )
+    nodes = [
+        {"name": label, **({"x": x} if node_x is not None else {})}
+        for label, x in zip(labels, node_x or [])
+    ]
+    links = [
+        {"source": s, "target": t, "value": v}
+        for s, t, v in zip(sources, targets, values_list)
+    ]
     return {"nodes": nodes, "links": links}
 
 
