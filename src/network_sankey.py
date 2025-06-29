@@ -137,7 +137,7 @@ DIRECTION_PATHS: dict[str, list[str]] = {
 DIRECTION_COLUMN_X: dict[str, dict[str, float]] = {
     "receive": {
         "l4_source": 0.0,
-        "l3_type": 0.4,
+        "l3_type": 0.2,
         "l3_source": 0.4,
         "l2_type": 0.6,
         "source_mac": 0.8,
@@ -148,7 +148,7 @@ DIRECTION_COLUMN_X: dict[str, dict[str, float]] = {
         "destination_mac": 0.2,
         "l2_type": 0.4,
         "l3_destination": 0.6,
-        "l3_type": 0.6,
+        "l3_type": 0.8,
         "l4_destination": 1.0,
     },
 }
