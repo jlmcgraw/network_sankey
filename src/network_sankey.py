@@ -122,10 +122,12 @@ DIRECTION_PATHS: dict[str, list[str]] = {
         "l3_source",
         "l2_type",
         "source_mac",
+        "scope",
         "destination_mac",
     ],
     "transmit": [
         "source_mac",
+        "scope",
         "destination_mac",
         "l2_type",
         "l3_destination",
@@ -159,11 +161,13 @@ INBOUND_PATH = [
     "l3_source",
     "l2_type",
     "source_mac",
+    "scope",
     "interface_label",
 ]
 
 OUTBOUND_PATH = [
     "interface_label",
+    "scope",
     "destination_mac",
     "l2_type",
     "l3_destination",
@@ -333,7 +337,7 @@ def create_sankey_figure(
             ),
         ],
     )
-    fig.update_layout(title_text=f"Network {direction} {metric}", font_size=10)
+    fig.update_layout(title_text=f"Network Traffic: {direction} {metric}", font_size=10)
     return fig
 
 
