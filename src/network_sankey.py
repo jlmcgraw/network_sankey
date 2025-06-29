@@ -232,10 +232,11 @@ def _compute_directional_sankey_data(
 
     node_x_map: dict[str, float] = {}
     col_map = DIRECTION_COLUMN_X.get(direction, {})
-    for col, x in col_map.items():
+    for col in path:
         if col in filtered:
+            x = col_map.get(col, 0.0)
             for val in filtered[col].dropna().unique():
-                node_x_map[str(val)] = x
+                node_x_map.setdefault(str(val), x)
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
@@ -278,14 +279,16 @@ def _compute_combined_sankey_data(
     values_list = combined_df["Value"].tolist()
 
     node_x_map: dict[str, float] = {}
-    for col, x in INBOUND_COLUMN_X.items():
+    for col in INBOUND_PATH:
         if col in inbound_df:
+            x = INBOUND_COLUMN_X.get(col, 0.0)
             for val in inbound_df[col].dropna().unique():
-                node_x_map[str(val)] = x
-    for col, x in OUTBOUND_COLUMN_X.items():
+                node_x_map.setdefault(str(val), x)
+    for col in OUTBOUND_PATH:
         if col in outbound_df:
+            x = OUTBOUND_COLUMN_X.get(col, 0.0)
             for val in outbound_df[col].dropna().unique():
-                node_x_map[str(val)] = x
+                node_x_map.setdefault(str(val), x)
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
