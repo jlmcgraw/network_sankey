@@ -54,7 +54,8 @@ Use the **Pause** button to temporarily stop capturing traffic and **Clear** to 
 - Display a running count of packets/frames/bytes in/out
 - Correct L2 protocol placement in the diagram
   - Node positions are now fixed so L2 entries don't shift columns
-  - Directional diagrams use explicit column values for each field
+  - Directional diagrams use explicit column values for each field, placing
+    layer‑2 protocols in the middle column
   - D3.js interface also respects fixed column assignments
 ### D3.js Interface
 
