@@ -195,6 +195,11 @@ def _compute_directional_sankey_data(
     if df.empty or not set(path).issubset(df.columns):
         return [], [], [], [], None
 
+    df = df.copy()
+    for col in ("l4_source", "l4_destination"):
+        if col in df.columns:
+            df[col] = df[col].astype("Int64")
+
     filtered = df.query(f'direction == "{direction}"')
     combined_df = _aggregate_links(filtered, path, metric)
 
@@ -217,6 +222,9 @@ def _compute_combined_sankey_data(
 
     df = df.copy()
     df["interface_label"] = interface_label
+    for col in ("l4_source", "l4_destination"):
+        if col in df.columns:
+            df[col] = df[col].astype("Int64")
 
     inbound_df = df.query('direction == "receive"').copy()
     outbound_df = df.query('direction == "transmit"').copy()
