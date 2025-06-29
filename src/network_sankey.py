@@ -204,7 +204,9 @@ def _compute_directional_sankey_data(
     targets = combined_df["Target"].map(node_indices).tolist()
     values_list = combined_df["Value"].tolist()
 
-    return list(all_nodes), sources, targets, values_list, None
+    labels = [str(node) for node in all_nodes]
+
+    return labels, sources, targets, values_list, None
 
 
 def _compute_combined_sankey_data(
@@ -251,7 +253,9 @@ def _compute_combined_sankey_data(
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
-    return list(all_nodes), sources, targets, values_list, node_x
+    labels = [str(node) for node in all_nodes]
+
+    return labels, sources, targets, values_list, node_x
 
 
 def compute_sankey_data(
@@ -487,7 +491,8 @@ def construct_dataframe_from_capture(
         data.append(packet_data)
 
     df = pd.DataFrame(data)
-    # df.fillna(value=np.nan, inplace=True)
+    df["l4_source"] = df["l4_source"].astype("Int64")
+    df["l4_destination"] = df["l4_destination"].astype("Int64")
     return df
 
 
@@ -566,7 +571,8 @@ def construct_dataframe_from_capture_using_tshark(
         data.append(packet_data)
 
     df = pd.DataFrame(data)
-    # df.fillna(value=np.nan, inplace=True)
+    df["l4_source"] = df["l4_source"].astype("Int64")
+    df["l4_destination"] = df["l4_destination"].astype("Int64")
     return df
 
 
