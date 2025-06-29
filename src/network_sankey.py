@@ -134,6 +134,25 @@ DIRECTION_PATHS: dict[str, list[str]] = {
     ],
 }
 
+DIRECTION_COLUMN_X: dict[str, dict[str, float]] = {
+    "receive": {
+        "l4_source": 0.0,
+        "l3_type": 0.2,
+        "l3_source": 0.4,
+        "l2_type": 0.5,
+        "source_mac": 0.7,
+        "destination_mac": 1.0,
+    },
+    "transmit": {
+        "source_mac": 0.0,
+        "destination_mac": 0.3,
+        "l2_type": 0.5,
+        "l3_destination": 0.7,
+        "l3_type": 0.8,
+        "l4_destination": 1.0,
+    },
+}
+
 INBOUND_PATH = [
     "l4_source",
     "l3_type",
@@ -193,7 +212,7 @@ def _aggregate_links(df: pd.DataFrame, path: list[str], metric: str) -> pd.DataF
 
 def _compute_directional_sankey_data(
     df: pd.DataFrame, direction: str, metric: str
-) -> tuple[list[str], list[int], list[int], list[int], None]:
+) -> tuple[list[str], list[int], list[int], list[int], list[float]]:
     path = DIRECTION_PATHS[direction]
 
     if df.empty or not set(path).issubset(df.columns):
@@ -211,7 +230,17 @@ def _compute_directional_sankey_data(
     targets = combined_df["Target"].map(node_indices).tolist()
     values_list = combined_df["Value"].tolist()
 
-    return list(all_nodes), sources, targets, values_list, None
+    node_x_map: dict[str, float] = {}
+    col_map = DIRECTION_COLUMN_X.get(direction, {})
+    for col in path:
+        if col in filtered:
+            values = filtered[col].dropna().unique()
+            for val in values:
+                node_x_map.setdefault(str(val), col_map.get(col, 0.0))
+
+    node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
+
+    return list(all_nodes), sources, targets, values_list, node_x
 
 
 def _compute_combined_sankey_data(
@@ -250,14 +279,16 @@ def _compute_combined_sankey_data(
     values_list = combined_df["Value"].tolist()
 
     node_x_map: dict[str, float] = {}
-    for col, x in INBOUND_COLUMN_X.items():
+    for col in INBOUND_PATH:
         if col in inbound_df:
-            for val in inbound_df[col].dropna().unique():
-                node_x_map[str(val)] = x
-    for col, x in OUTBOUND_COLUMN_X.items():
+            values = inbound_df[col].dropna().unique()
+            for val in values:
+                node_x_map.setdefault(str(val), INBOUND_COLUMN_X.get(col, 0.0))
+    for col in OUTBOUND_PATH:
         if col in outbound_df:
-            for val in outbound_df[col].dropna().unique():
-                node_x_map[str(val)] = x
+            values = outbound_df[col].dropna().unique()
+            for val in values:
+                node_x_map.setdefault(str(val), OUTBOUND_COLUMN_X.get(col, 0.0))
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
@@ -289,6 +320,7 @@ def create_sankey_figure(
     fig = FigureWidget(
         data=[
             go.Sankey(
+                arrangement="fixed",
                 node=dict(
                     pad=15,
                     thickness=20,
@@ -320,6 +352,7 @@ def update_sankey_figure(
     )
     if node_x is not None:
         fig.data[0].node.update(x=node_x)
+    fig.data[0].arrangement = "fixed"
     # update link arrays via the nested link object
     fig.data[0].link.update(source=sources, target=targets, value=values_list)
 
