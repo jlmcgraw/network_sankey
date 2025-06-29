@@ -19,6 +19,7 @@ import logging
 import sys
 from enum import Enum
 from itertools import pairwise
+import ipaddress
 
 import dash
 import pandas as pd
@@ -120,6 +121,7 @@ DIRECTION_PATHS: dict[str, list[str]] = {
         "l4_source",
         "l3_type",
         "l3_source",
+        "l3_source_scope",
         "l2_type",
         "source_mac",
         "scope",
@@ -130,6 +132,7 @@ DIRECTION_PATHS: dict[str, list[str]] = {
         "scope",
         "destination_mac",
         "l2_type",
+        "l3_destination_scope",
         "l3_destination",
         "l3_type",
         "l4_destination",
@@ -371,6 +374,58 @@ def create_and_display_sankey_diagram(
     return create_sankey_figure(df, direction, metric, interface_label)
 
 
+
+def get_ip_scope(ip_address_str):
+    # IPv4 scopes
+    # Public (Global)
+    # Private (Local)
+    # Link-local
+    # Multicast
+    # Documentation
+    # Reserved blocks
+    try:
+        ip_obj = ipaddress.ip_address(ip_address_str)
+        if isinstance(ip_obj, ipaddress.IPv4Address):
+            if ip_obj.is_link_local:
+                return "Link-Local"
+            elif ip_obj.is_private:
+                return "Private"
+            elif ip_obj.is_loopback:
+                return "Loopback"
+            elif ip_obj.is_multicast:
+                return "Multicast"
+            elif ip_obj.is_reserved:
+                return "Reserved"
+            elif ip_obj.is_unspecified:
+                return "Unspecified"
+            elif ip_obj.is_global:
+                return "Global"
+            else:
+                return "Not categorized"
+        elif isinstance(ip_obj, ipaddress.IPv6Address):
+            if ip_obj.is_link_local:
+                return "Link-Local"
+            elif ip_obj.is_site_local:
+                return "Site Local"
+            elif ip_obj.is_private:
+                return "Private"
+            elif ip_obj.is_loopback:
+                return "Loopback"
+            elif ip_obj.is_multicast:
+                return "Multicast"
+            elif ip_obj.is_reserved:
+                return "Reserved"
+            elif ip_obj.is_unspecified:
+                return "Unspecified"
+            elif ip_obj.is_global:
+                return "Global"
+            else:
+                return "Not categorized"
+        else:
+            return "Neither IPv4 or IPv6"
+    except ipaddress.AddressValueError:
+        return "Invalid IP Address"
+
 def construct_dataframe_from_capture(
     packets: scapy.all.PacketList,
     mac_address_to_interface_mapping: MacAddressInterfaceDict,
@@ -386,7 +441,9 @@ def construct_dataframe_from_capture(
 
     for packet in packets:
         l3_source = None
+        l3_source_scope = None
         l3_destination = None
+        l3_destination_scope = None
         l3_type = None
         l4_source = None
         l4_destination = None
@@ -406,7 +463,9 @@ def construct_dataframe_from_capture(
         # Layer 3
         if packet.haslayer("IP"):
             l3_source = packet["IP"].src
+            l3_source_scope = get_ip_scope(l3_source)
             l3_destination = packet["IP"].dst
+            l3_destination_scope = get_ip_scope(l3_destination)
             l3_type = packet["IP"].proto
             # print(f"IP {l3_type=}")
             try:
@@ -417,7 +476,9 @@ def construct_dataframe_from_capture(
                 pass
         elif packet.haslayer("IPv6"):
             l3_source = packet["IPv6"].src
+            l3_source_scope = get_ip_scope(l3_source)
             l3_destination = packet["IPv6"].dst
+            l3_destination_scope = get_ip_scope(l3_destination)
             l3_type = packet["IPv6"].nh
             # print(f"IPv6 {l3_type=}")
             try:
@@ -447,7 +508,9 @@ def construct_dataframe_from_capture(
             "scope": f"{determine_frame_scope(packet).value}",
             "frames": 1,
             "l3_source": l3_source,
+            "l3_source_scope": l3_source_scope,
             "l3_destination": l3_destination,
+            "l3_destination_scope": l3_destination_scope,
             "l3_type": l3_type,
             "l4_source": l4_source,
             "l4_destination": l4_destination,
