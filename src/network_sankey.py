@@ -453,6 +453,10 @@ def construct_dataframe_from_capture(
 
     df = pd.DataFrame(data)
     # df.fillna(value=np.nan, inplace=True)
+    # When these columns contain a NaN value (eg ARP), the rest of the values get converted to floats (eg 53 -> 53.0)
+    # Convert the column types to Int64, which supports a nullable value, to avoid this
+    df['l4_source'] = df['l4_source'].astype('Int64')
+    df['l4_destination'] = df['l4_destination'].astype('Int64')
     return df
 
 
