@@ -112,14 +112,14 @@ DIRECTION_PATHS: dict[str, list[str]] = {
         "l4_source",
         "l3_type",
         "l3_source",
-        "type",
+        "l2_type",
         "source_mac",
         "destination_mac",
     ],
     "transmit": [
         "source_mac",
         "destination_mac",
-        "type",
+        "l2_type",
         "l3_destination",
         "l3_type",
         "l4_destination",
@@ -130,7 +130,7 @@ INBOUND_PATH = [
     "l4_source",
     "l3_type",
     "l3_source",
-    "type",
+    "l2_type",
     "source_mac",
     "interface_label",
 ]
@@ -138,7 +138,7 @@ INBOUND_PATH = [
 OUTBOUND_PATH = [
     "interface_label",
     "destination_mac",
-    "type",
+    "l2_type",
     "l3_destination",
     "l3_type",
     "l4_destination",
@@ -148,7 +148,7 @@ INBOUND_COLUMN_X = {
     "l4_source": 0.0,
     "l3_type": 0.2,
     "l3_source": 0.2,
-    "type": 0.4,
+    "l2_type": 0.3,
     "source_mac": 0.4,
     "interface_label": 0.5,
 }
@@ -156,7 +156,7 @@ INBOUND_COLUMN_X = {
 OUTBOUND_COLUMN_X = {
     "interface_label": 0.5,
     "destination_mac": 0.6,
-    "type": 0.6,
+    "l2_type": 0.7,
     "l3_destination": 0.8,
     "l3_type": 0.8,
     "l4_destination": 1.0,
@@ -174,11 +174,7 @@ def _aggregate_links(df: pd.DataFrame, path: list[str], metric: str) -> pd.DataF
     """Aggregate ``metric`` for each consecutive pair of columns in ``path``."""
     links = pd.DataFrame()
     for source, target in pairwise(path):
-        agg = (
-            df.groupby([source, target], dropna=False)[metric]
-            .sum()
-            .reset_index()
-        )
+        agg = df.groupby([source, target], dropna=False)[metric].sum().reset_index()
         agg = agg.dropna(subset=[source, target])
         agg["Source"] = agg[source]
         agg["Target"] = agg[target]
@@ -255,7 +251,10 @@ def _compute_combined_sankey_data(
 
 
 def compute_sankey_data(
-    df: pd.DataFrame, direction: str, metric: str, interface_label: str = "interface",
+    df: pd.DataFrame,
+    direction: str,
+    metric: str,
+    interface_label: str = "interface",
 ) -> tuple[list[str], list[int], list[int], list[int], list[float] | None]:
     """Return labels, links and optional x positions for a Sankey diagram."""
     if direction in ("receive", "transmit"):
@@ -263,8 +262,12 @@ def compute_sankey_data(
 
     return _compute_combined_sankey_data(df, metric, interface_label)
 
+
 def create_sankey_figure(
-    df: pd.DataFrame, direction: str = "transmit", metric: str = "frames", interface_label: str = "interface",
+    df: pd.DataFrame,
+    direction: str = "transmit",
+    metric: str = "frames",
+    interface_label: str = "interface",
 ) -> FigureWidget:
     """Create a Sankey figure widget from dataframe."""
     labels, sources, targets, values_list, node_x = compute_sankey_data(df, direction, metric, interface_label)
@@ -315,91 +318,6 @@ def create_and_display_sankey_diagram(
 ) -> FigureWidget:
     """Return a Sankey diagram as a :class:`FigureWidget`."""
     return create_sankey_figure(df, direction, metric, interface_label)
-
-
-# def try_sunburst(df, metric=None):
-#     paths = ["destination_mac", "source_mac"]
-#
-#     res = list(pairwise(paths))
-#     for source, target in res:
-#         receive_data = (
-#             df.groupby(
-#                 [source, target],
-#                 dropna=False,
-#             )[metric]
-#             .sum()
-#             .reset_index()
-#         )
-#         print(receive_data)
-#     # receive_data = (
-#     #     df.query('direction == "receive"')
-#     #     .groupby(
-#     #         [
-#     #             # "direction",
-#     #             "source_mac",
-#     #             "destination_mac",
-#     #             "type",
-#     #             # "scope",
-#     #             "l3_source",
-#     #             "l3_type",
-#     #             "l4_source",
-#     #         ],
-#     #         dropna=False,
-#     #     )["frames"]
-#     #     .sum()
-#     #     .reset_index()
-#     # )
-#     # transmit_data = (
-#     #     df.query('direction == "transmit"')
-#     #     .groupby(
-#     #         [
-#     #             # "direction",
-#     #             "source_mac",
-#     #             "destination_mac",
-#     #             "type",
-#     #             # "scope",
-#     #             "l3_destination",
-#     #             "l3_type",
-#     #             "l4_destination",
-#     #         ],
-#     #         dropna=False,
-#     #     )["frames"]
-#     #     .sum()
-#     #     .reset_index()
-#     # )
-#     #
-#     # fig = px.sunburst(
-#     #     receive_data,
-#     #     path=[
-#     #         "destination_mac",
-#     #         "source_mac",
-#     #         "type",
-#     #         "l3_source",
-#     #         "l3_type",
-#     #         "l4_source",
-#     #     ],
-#     #     values="frames",
-#     #     color="destination_mac",
-#     # )
-#     # fig = px.sunburst(
-#     #     transmit_data,
-#     #     path=[
-#     #         "source_mac",
-#     #         "destination_mac",
-#     #         "type",
-#     #         "l3_destination",
-#     #         "l3_type",
-#     #         "l4_destination",
-#     #     ],
-#     #     values="frames",
-#     #     color="source_mac",
-#     # )
-#     # fig = make_subplots(rows=1, cols=2)
-#     # fig.add_trace([sunburst_1], row=1, col=1)
-#     #
-#     # fig.add_trace([sunburst_2], row=1, col=2)
-#
-#     # fig.show()
 
 
 def construct_dataframe_from_capture(
@@ -471,86 +389,7 @@ def construct_dataframe_from_capture(
             "timestamp": packet.time,
             "source_mac": ethernet_frame.src,
             "destination_mac": ethernet_frame.dst,
-            "type": ethernet_frame_type,
-            "length": len(packet),
-            # "interface": {my}
-            "direction": f"{determine_frame_direction(packet, mac_address_to_interface_mapping).value}",
-            "scope": f"{determine_frame_scope(packet).value}",
-            "frames": 1,
-            "l3_source": l3_source,
-            "l3_destination": l3_destination,
-            "l3_type": l3_type,
-            "l4_source": l4_source,
-            "l4_destination": l4_destination,
-        }
-
-        data.append(packet_data)
-
-    df = pd.DataFrame(data)
-    # df.fillna(value=np.nan, inplace=True)
-    return df
-
-
-def construct_dataframe_from_capture_using_tshark(
-    packets: scapy.all.PacketList,
-    mac_address_to_interface_mapping: MacAddressInterfaceDict,
-) -> pd.DataFrame:
-    """Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
-
-    :param packets:
-    :param mac_address_to_interface_mapping:
-    :return:
-    """
-    # Layer 2
-    data = []
-
-    for packet in packets:
-        # Layer 2
-        if not packet.haslayer("Ether"):
-            print(f"{packet=}")
-            raise ValueError(f"Non-Ethernet frame: {packet}")
-        ethernet_frame = packet.getlayer("Ether")
-        ethernet_frame_type = f"{ethernet_frame.type:#06x}"
-        ethernet_frame_type = ethernet_type_to_protocol_lookup.get(ethernet_frame.type, ethernet_frame_type)
-        # print(f"{ethernet_frame_type=}")
-        # Layer 3
-        if packet.haslayer("IP"):
-            l3_source = packet["IP"].src
-            l3_destination = packet["IP"].dst
-            l3_type = packet["IP"].proto
-            # print(f"IP {l3_type=}")
-            try:
-                l3_type = packet["IP"].get_field("proto").i2s[l3_type]
-                l3_type = l3_type.upper()
-                # print(f"{l3_type=}")
-            except AttributeError:
-                pass
-        elif packet.haslayer("IPv6"):
-            l3_source = packet["IPv6"].src
-            l3_destination = packet["IPv6"].dst
-            l3_type = packet["IPv6"].nh
-            # print(f"IPv6 {l3_type=}")
-            try:
-                l3_type = packet["IPv6"].get_field("nh").i2s[l3_type]
-                l3_type = l3_type.upper()
-
-                # print(f"{l3_type=}")
-            except AttributeError:
-                pass
-
-        # Layer 4
-        if packet.haslayer("UDP"):
-            l4_source = packet["UDP"].sport
-            l4_destination = packet["UDP"].dport
-        elif packet.haslayer("TCP"):
-            l4_source = packet["TCP"].sport
-            l4_destination = packet["TCP"].dport
-
-        packet_data = {
-            "timestamp": packet.time,
-            "source_mac": ethernet_frame.src,
-            "destination_mac": ethernet_frame.dst,
-            "type": ethernet_frame_type,
+            "l2_type": ethernet_frame_type,
             "length": len(packet),
             # "interface": {my}
             "direction": f"{determine_frame_direction(packet, mac_address_to_interface_mapping).value}",
@@ -689,15 +528,15 @@ def main():
                     metric=metric,
                     interface_label=capture_interface,
                 )
-                counts = "RX 0 {unit} | TX 0 {unit}".format(
-                    unit="bytes" if metric == "length" else "frames"
-                )
+                counts = "RX 0 {unit} | TX 0 {unit}".format(unit="bytes" if metric == "length" else "frames")
                 return fig, counts
             if paused:
                 total_in = int(df.query('direction == "receive"')[metric].sum())
                 total_out = int(df.query('direction == "transmit"')[metric].sum())
-                counts = f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | " \
+                counts = (
+                    f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | "
                     f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
+                )
                 return fig, counts
             packets = sniff(iface=capture_interface, count=batch_size, timeout=1)
             if packets:
@@ -715,8 +554,10 @@ def main():
                 )
             total_in = int(df.query('direction == "receive"')[metric].sum())
             total_out = int(df.query('direction == "transmit"')[metric].sum())
-            counts = f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | " \
+            counts = (
+                f"RX {total_in} {'bytes' if metric == 'length' else 'frames'} | "
                 f"TX {total_out} {'bytes' if metric == 'length' else 'frames'}"
+            )
             return fig, counts
 
         app.run(debug=False)
@@ -727,7 +568,8 @@ def main():
             if not packets:
                 continue
             new_df = construct_dataframe_from_capture(
-                packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict,
+                packets,
+                mac_address_to_interface_mapping=mac_addresses_mapping_dict,
             )
             df = pd.concat([df, new_df], ignore_index=True)
             update_sankey_figure(
@@ -741,7 +583,6 @@ def main():
             total_out = int(df.query('direction == "transmit"')["frames"].sum())
             print(f"RX {total_in} frames | TX {total_out} frames")
 
-    # try_sunburst(df, metric="frames")
     return 0
 
 

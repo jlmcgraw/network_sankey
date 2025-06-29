@@ -26,10 +26,7 @@ DATA_FILE = WEB_DIR / "data.json"
 def create_sankey_json(df: pd.DataFrame, direction: str, metric: str, interface_label: str) -> dict:
     labels, sources, targets, values_list, _ = compute_sankey_data(df, direction, metric, interface_label)
     nodes = [{"name": label} for label in labels]
-    links = [
-        {"source": s, "target": t, "value": v}
-        for s, t, v in zip(sources, targets, values_list)
-    ]
+    links = [{"source": s, "target": t, "value": v} for s, t, v in zip(sources, targets, values_list)]
     return {"nodes": nodes, "links": links}
 
 
