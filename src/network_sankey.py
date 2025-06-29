@@ -37,8 +37,9 @@ logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 NODE_COLOR_MAP: dict[str, str] = {}
 
 
-def get_color_for_label(label: str) -> str:
+def get_color_for_label(label: str | int) -> str:
     """Return a consistent hex color for the given label."""
+    label = str(label)
     if label not in NODE_COLOR_MAP:
         digest = hashlib.sha256(label.encode()).hexdigest()[:6]
         NODE_COLOR_MAP[label] = f"#{digest}"
@@ -194,6 +195,9 @@ def _compute_directional_sankey_data(
     filtered = df.query(f'direction == "{direction}"')
     combined_df = _aggregate_links(filtered, path, metric)
 
+    combined_df["Source"] = combined_df["Source"].astype(str)
+    combined_df["Target"] = combined_df["Target"].astype(str)
+
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
     sources = combined_df["Source"].map(node_indices).tolist()
@@ -229,6 +233,9 @@ def _compute_combined_sankey_data(
         ignore_index=True,
     )
 
+    combined_df["Source"] = combined_df["Source"].astype(str)
+    combined_df["Target"] = combined_df["Target"].astype(str)
+
     all_nodes = pd.concat([combined_df["Source"], combined_df["Target"]]).dropna().unique()
     node_indices = {node: idx for idx, node in enumerate(all_nodes)}
     sources = combined_df["Source"].map(node_indices).tolist()
@@ -239,11 +246,11 @@ def _compute_combined_sankey_data(
     for col, x in INBOUND_COLUMN_X.items():
         if col in inbound_df:
             for val in inbound_df[col].dropna().unique():
-                node_x_map[val] = x
+                node_x_map[str(val)] = x
     for col, x in OUTBOUND_COLUMN_X.items():
         if col in outbound_df:
             for val in outbound_df[col].dropna().unique():
-                node_x_map[val] = x
+                node_x_map[str(val)] = x
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
