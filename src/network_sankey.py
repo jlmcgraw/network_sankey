@@ -232,11 +232,15 @@ def _compute_directional_sankey_data(
 
     node_x_map: dict[str, float] = {}
     col_map = DIRECTION_COLUMN_X.get(direction, {})
-    for col in path:
-        if col in filtered:
-            x = col_map.get(col, 0.0)
-            for val in filtered[col].dropna().unique():
-                node_x_map.setdefault(str(val), x)
+    for src_col, dst_col in pairwise(path):
+        if src_col in filtered and dst_col in filtered:
+            pair_df = filtered[[src_col, dst_col]].dropna()
+            src_x = col_map.get(src_col, 0.0)
+            dst_x = col_map.get(dst_col, 0.0)
+            for val in pair_df[src_col].unique():
+                node_x_map[str(val)] = src_x
+            for val in pair_df[dst_col].unique():
+                node_x_map[str(val)] = dst_x
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
@@ -279,16 +283,24 @@ def _compute_combined_sankey_data(
     values_list = combined_df["Value"].tolist()
 
     node_x_map: dict[str, float] = {}
-    for col in INBOUND_PATH:
-        if col in inbound_df:
-            x = INBOUND_COLUMN_X.get(col, 0.0)
-            for val in inbound_df[col].dropna().unique():
-                node_x_map.setdefault(str(val), x)
-    for col in OUTBOUND_PATH:
-        if col in outbound_df:
-            x = OUTBOUND_COLUMN_X.get(col, 0.0)
-            for val in outbound_df[col].dropna().unique():
-                node_x_map.setdefault(str(val), x)
+    for src_col, dst_col in pairwise(INBOUND_PATH):
+        if src_col in inbound_df and dst_col in inbound_df:
+            pair_df = inbound_df[[src_col, dst_col]].dropna()
+            src_x = INBOUND_COLUMN_X.get(src_col, 0.0)
+            dst_x = INBOUND_COLUMN_X.get(dst_col, 0.0)
+            for val in pair_df[src_col].unique():
+                node_x_map[str(val)] = src_x
+            for val in pair_df[dst_col].unique():
+                node_x_map[str(val)] = dst_x
+    for src_col, dst_col in pairwise(OUTBOUND_PATH):
+        if src_col in outbound_df and dst_col in outbound_df:
+            pair_df = outbound_df[[src_col, dst_col]].dropna()
+            src_x = OUTBOUND_COLUMN_X.get(src_col, 0.0)
+            dst_x = OUTBOUND_COLUMN_X.get(dst_col, 0.0)
+            for val in pair_df[src_col].unique():
+                node_x_map[str(val)] = src_x
+            for val in pair_df[dst_col].unique():
+                node_x_map[str(val)] = dst_x
 
     node_x = [node_x_map.get(node, 0.0) for node in all_nodes]
 
