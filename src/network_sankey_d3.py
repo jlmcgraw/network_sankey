@@ -1,4 +1,15 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+# "anywidget",
+# "dash",
+# "pandas",
+# "plotly",
+# "scapy",
+# "tqdm",
+# ]
+# ///
 """Serve a live-updating D3.js Sankey diagram of network traffic."""
 
 from __future__ import annotations

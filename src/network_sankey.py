@@ -6,7 +6,6 @@
 # "dash",
 # "pandas",
 # "plotly",
-# "ruff",
 # "scapy",
 # "tqdm",
 # ]
