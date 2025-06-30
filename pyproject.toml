@@ -31,6 +31,7 @@ dependencies = [
 dev = [
     # Testing
     "unittest-xml-reporting",
+    "pytest-cov",
     # Linting and type checking
     "mypy",
     "ruff >= 0.9.2",
@@ -114,6 +115,7 @@ indent-style = "space"
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = 100
+
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report html --cov-report term-missing --cov-fail-under 95"
