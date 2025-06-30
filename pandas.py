@@ -1,3 +1,10 @@
+class Index(list):
+    """Minimal stub of pandas.Index."""
+
+    def __init__(self, data=None):
+        super().__init__(data or [])
+
+
 class Series:
     def __init__(self, data):
         self.data = list(data)
@@ -158,6 +165,10 @@ class DataFrame:
 
     def __len__(self):
         return len(self._data)
+
+    @property
+    def index(self):
+        return Index(range(len(self._data)))
 
 class DataFrameGroupBy:
     def __init__(self, df, keys, dropna):
