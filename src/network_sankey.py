@@ -11,15 +11,14 @@
 # "tqdm",
 # ]
 # ///
-
-
+"""Utilities for building network traffic Sankey diagrams."""
 import argparse
 import hashlib
+import ipaddress
 import logging
 import sys
 from enum import Enum
 from itertools import pairwise
-import ipaddress
 
 import dash
 import pandas as pd
@@ -55,12 +54,9 @@ def get_color_for_label(label: str | int) -> str:
 
 
 def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
-    """Determine whether frame is broadcast, multicast, or unicast
-    :param frame:
-    :return:
-    """
+    """Return the scope of ``frame`` as broadcast, multicast, or unicast."""
     if not frame.haslayer("Ether"):
-        print(f"{frame=}")
+        logging.debug("Unexpected frame without Ethernet layer: %s", frame)
         raise ValueError("Non-Ethernet frame")
 
     dst_mac = frame.dst
@@ -72,17 +68,19 @@ def determine_frame_scope(frame: scapy.packet.Packet) -> Enum:
     return Scope.UNICAST
 
 
-def determine_frame_direction(frame: scapy.packet.Packet, my_mac_addresses: MacAddressInterfaceDict) -> Enum:
+def determine_frame_direction(
+    frame: scapy.packet.Packet,
+    my_mac_addresses: MacAddressInterfaceDict,
+) -> Enum:
+    """Return :class:`Direction` of ``frame`` relative to ``my_mac_addresses``."""
     if frame.src in my_mac_addresses:
         return Direction.TRANSMIT
     return Direction.RECEIVE
 
 
 def create_mac_to_interface_mapping() -> MacAddressInterfaceDict:
-    """Create a mac->interface mapping dict
-    :return:
-    """
-    mac_addresses_mapping_dict: MacAddressInterfaceDict = dict()
+    """Return a mapping of MAC address to interface name."""
+    mac_addresses_mapping_dict: MacAddressInterfaceDict = {}
 
     for interface in get_if_list():
         try:
@@ -98,16 +96,14 @@ def create_mac_to_interface_mapping() -> MacAddressInterfaceDict:
 
 
 def create_ip_to_interface_mapping() -> IpAddressInterfaceDict:
-    """Create an ip->interface mapping dict
-    :return:
-    """
-    ip_to_interface_dict: IpAddressInterfaceDict = dict()
+    """Return a mapping of IP address to interface name."""
+    ip_to_interface_dict: IpAddressInterfaceDict = {}
 
     for interface in get_if_list():
         try:
             ip_address = get_if_addr(interface)
             # Filtering out interfaces that might not have an IP address assigned
-            if ip_address != "0.0.0.0":
+            if ip_address != "0.0.0.0":  # noqa: S104
                 ip_to_interface_dict[ip_address] = interface
         except ValueError:
             # This handles cases where an interface might not have an IP address
@@ -218,7 +214,7 @@ def _aggregate_links(df: pd.DataFrame, path: list[str], metric: str) -> pd.DataF
 
 
 def _compute_directional_sankey_data(
-    df: pd.DataFrame, direction: str, metric: str
+    df: pd.DataFrame, direction: str, metric: str,
 ) -> tuple[list[str], list[int], list[int], list[int], list[float]]:
     path = DIRECTION_PATHS[direction]
 
@@ -251,7 +247,7 @@ def _compute_directional_sankey_data(
 
 
 def _compute_combined_sankey_data(
-    df: pd.DataFrame, metric: str, interface_label: str
+    df: pd.DataFrame, metric: str, interface_label: str,
 ) -> tuple[list[str], list[int], list[int], list[int], list[float]]:
     if df.empty:
         return [], [], [], [], None
@@ -331,12 +327,12 @@ def create_sankey_figure(
                 node=dict(
                     pad=15,
                     thickness=20,
-                    line=dict(color="black", width=0.5),
+                    line={"color": "black", "width": 0.5},
                     label=labels,
                     color=[get_color_for_label(label) for label in labels],
                     **({"x": node_x} if node_x is not None else {}),
                 ),
-                link=dict(source=sources, target=targets, value=values_list),
+                link={"source": sources, "target": targets, "value": values_list},
             ),
         ],
     )
@@ -375,7 +371,8 @@ def create_and_display_sankey_diagram(
 
 
 
-def get_ip_scope(ip_address_str):
+def get_ip_scope(ip_address_str: str) -> str:
+    """Return the general address scope for ``ip_address_str``."""
     # IPv4 scopes
     # Public (Global)
     # Private (Local)
@@ -430,7 +427,7 @@ def construct_dataframe_from_capture(
     packets: scapy.all.PacketList,
     mac_address_to_interface_mapping: MacAddressInterfaceDict,
 ) -> pd.DataFrame:
-    """Given the captured packets, construct and enrich a dataframe to be used as input for Sankey
+    """Given captured packets, enrich and return a dataframe for Sankey diagrams.
 
     :param packets:
     :param mac_address_to_interface_mapping:
@@ -454,7 +451,7 @@ def construct_dataframe_from_capture(
 
         # Layer 2
         if not packet.haslayer("Ether"):
-            print(f"{packet=}")
+            logging.debug("Non-Ethernet packet: %s", packet)
             raise ValueError(f"Non-Ethernet frame: {packet}")
         ethernet_frame = packet.getlayer("Ether")
         ethernet_frame_type = f"{ethernet_frame.type:#06x}"
@@ -522,12 +519,13 @@ def construct_dataframe_from_capture(
     # df.fillna(value=np.nan, inplace=True)
     # When these columns contain a NaN value (eg ARP), the rest of the values get converted to floats (eg 53 -> 53.0)
     # Convert the column types to Int64, which supports a nullable value, to avoid this
-    df['l4_source'] = df['l4_source'].astype('Int64')
-    df['l4_destination'] = df['l4_destination'].astype('Int64')
+    df["l4_source"] = df["l4_source"].astype("Int64")
+    df["l4_destination"] = df["l4_destination"].astype("Int64")
     return df
 
 
-def parse_command_line_arguments():
+def parse_command_line_arguments() -> argparse.Namespace:
+    """Parse and return command-line arguments."""
     parser = argparse.ArgumentParser(description="A script to capture and display network traffic as a Sankey diagram")
     parser.add_argument(
         "capture_file",
@@ -553,7 +551,8 @@ def parse_command_line_arguments():
     return args
 
 
-def main():
+def main() -> int:
+    """Entry point for the command-line interface."""
     args = parse_command_line_arguments()
     packet_capture_file = args.capture_file
     batch_size = args.batch_size
@@ -565,11 +564,11 @@ def main():
     mac_addresses_mapping_dict = create_mac_to_interface_mapping()
 
     if packet_capture_file:
-        print(f"Loading previously captured traffic from '{packet_capture_file}'")
+        logging.info("Loading previously captured traffic from '%s'", packet_capture_file)
         try:
             packets = rdpcap(packet_capture_file)
         except Exception as e:
-            print(f"Unable to load packet capture '{packet_capture_file}': {e}")
+            logging.error("Unable to load packet capture '%s': %s", packet_capture_file, e)
             return 1
 
         df = construct_dataframe_from_capture(packets, mac_address_to_interface_mapping=mac_addresses_mapping_dict)
@@ -597,7 +596,7 @@ def main():
                 dcc.Interval(id="interval", interval=3000, n_intervals=0),
                 dcc.Store(id="paused", data=False),
                 dcc.Store(id="metric", data="frames"),
-            ]
+            ],
         )
 
         @app.callback(
@@ -606,7 +605,7 @@ def main():
             Input("pause-button", "n_clicks"),
             State("paused", "data"),
         )
-        def toggle_pause(n_clicks, paused):
+        def toggle_pause(n_clicks: int | None, paused: bool) -> tuple[str, bool]:
             if n_clicks is None or n_clicks == 0:
                 return "Pause", paused
             paused = not paused
@@ -618,7 +617,7 @@ def main():
             Input("metric-toggle-button", "n_clicks"),
             State("metric", "data"),
         )
-        def toggle_metric(n_clicks, metric):
+        def toggle_metric(n_clicks: int | None, metric: str) -> tuple[str, str]:
             if n_clicks is None or n_clicks == 0:
                 label = "Show Bytes" if metric == "frames" else "Show Frames"
                 return label, metric
@@ -634,7 +633,12 @@ def main():
             Input("metric", "data"),
             State("paused", "data"),
         )
-        def update_graph(n_intervals, clear_clicks, metric, paused):
+        def update_graph(
+            _n_intervals: int,
+            _clear_clicks: int | None,
+            metric: str,
+            paused: bool,
+        ) -> tuple[FigureWidget, str]:
             nonlocal df
             triggered = dash.callback_context.triggered_id
             if triggered == "clear-button":
@@ -699,7 +703,7 @@ def main():
             )
             total_in = _safe_direction_sum(df, "receive", "frames")
             total_out = _safe_direction_sum(df, "transmit", "frames")
-            print(f"RX {total_in} frames | TX {total_out} frames")
+            logging.info("RX %s frames | TX %s frames", total_in, total_out)
 
     return 0
 

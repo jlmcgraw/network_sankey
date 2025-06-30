@@ -1,7 +1,8 @@
+"""Model definitions for network packet data."""
+
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
 
 # Do this to suppress warnings when loading scapy module
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
@@ -9,7 +10,7 @@ logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 MacAddress = str
 IPv4Address = str
 IPv6Address = str
-IpAddress = Union[IPv4Address, IPv6Address]
+IpAddress = IPv4Address | IPv6Address
 Interface = str
 Length = int
 
@@ -19,29 +20,35 @@ MacAddressInterfaceDict = dict[MacAddress, Interface]
 
 @dataclass
 class FrameData:
-    timestamp: str = None
-    source_mac: str = None
-    destination_mac: str = None
-    type: str = None
-    length: int = None
-    direction: str = None
-    scope: str = None
-    frames: int = None
-    l3_source: str = None
-    l3_destination: str = None
-    l3_type: str = None
-    l4_source: str = None
-    l4_destination: str = None
-    highest_protocol: str = None
+    """Normalized packet data for Sankey diagrams."""
+
+    timestamp: str | None = None
+    source_mac: str | None = None
+    destination_mac: str | None = None
+    type: str | None = None
+    length: int | None = None
+    direction: str | None = None
+    scope: str | None = None
+    frames: int | None = None
+    l3_source: str | None = None
+    l3_destination: str | None = None
+    l3_type: str | None = None
+    l4_source: str | None = None
+    l4_destination: str | None = None
+    highest_protocol: str | None = None
 
 
 class Scope(Enum):
+    """Possible scope of a frame."""
+
     BROADCAST = "broadcast"
     MULTICAST = "multicast"
     UNICAST = "unicast"
 
 
 class Direction(Enum):
+    """Frame directions relative to the host."""
+
     TRANSMIT = "transmit"
     RECEIVE = "receive"
 
