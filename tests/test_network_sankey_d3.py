@@ -1,4 +1,29 @@
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+# Stub missing external dependencies
+from types import ModuleType, SimpleNamespace
+
+sys.modules.setdefault("dash", SimpleNamespace())
+plotly_mod = ModuleType("plotly")
+graph_objs = ModuleType("plotly.graph_objects")
+graph_objs.FigureWidget = object
+graph_objs.Sankey = lambda **kw: SimpleNamespace(node=SimpleNamespace(), link=SimpleNamespace())
+sys.modules.setdefault("plotly", plotly_mod)
+sys.modules.setdefault("plotly.graph_objects", graph_objs)
+scapy_mod = ModuleType("scapy")
+packet_mod = ModuleType("scapy.packet")
+packet_mod.Packet = object
+scapy_mod.packet = packet_mod
+all_mod = SimpleNamespace(PacketList=list)
+scapy_mod.all = all_mod
+sys.modules.setdefault("scapy", scapy_mod)
+sys.modules.setdefault("scapy.packet", packet_mod)
+sys.modules.setdefault("scapy.all", all_mod)
 
 import pandas as pd
 
@@ -11,8 +36,10 @@ def test_create_sankey_json():
         "l4_source": ["a"],
         "l3_type": ["b"],
         "l3_source": ["c"],
+        "l3_source_scope": ["s"],
         "l2_type": ["d"],
         "source_mac": ["e"],
+        "scope": ["unicast"],
         "destination_mac": ["f"],
         "frames": [1],
     })
